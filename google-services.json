@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "236849589651",
+    "project_id": "jonathan-pager",
+    "storage_bucket": "jonathan-pager.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:236849589651:android:63ed2ab89648f91b824c66",
+        "android_client_info": {
+          "package_name": "cc.jsplayground.pager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNd3ejxSni3P7JoqLq3EZDurqdgWt6RK0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

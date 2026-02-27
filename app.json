@@ -1,30 +1,43 @@
 {
   "expo": {
-    "name": "jonathan-pager",
+    "name": "Jonathan Pager",
     "slug": "jonathan-pager",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
+      "backgroundColor": "#111111"
     },
     "android": {
+      "package": "cc.jsplayground.pager",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#111111"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "00f38f4e-21a0-43da-b440-20c6a09679a4"
+      }
+    },
+    "owner": "joaohts"
   }
 }

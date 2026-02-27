@@ -73,10 +73,9 @@ async function setupChannels() {
   });
 }
 
-async function registerForPush(): Promise<string | null> {
+async function registerForPush(): Promise<string> {
   if (!Device.isDevice) {
-    console.log("Push notifications require a physical device");
-    return null;
+    throw new Error("Push notifications require a physical device");
   }
 
   const { status: existing } = await Notifications.getPermissionsAsync();
@@ -88,12 +87,12 @@ async function registerForPush(): Promise<string | null> {
   }
 
   if (finalStatus !== "granted") {
-    console.log("Push notification permission not granted");
-    return null;
+    throw new Error(`Permission not granted (status: ${finalStatus})`);
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync();
-  console.log("Expo push token:", tokenData.data);
+  const tokenData = await Notifications.getExpoPushTokenAsync({
+    projectId: "00f38f4e-21a0-43da-b440-20c6a09679a4",
+  });
   return tokenData.data;
 }
 
@@ -122,13 +121,14 @@ function formatTime(ts: number): string {
 export default function App() {
   const [notifications, setNotifications] = useState<PagerNotification[]>([]);
   const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const notificationListener = useRef<Notifications.EventSubscription>(null);
   const responseListener = useRef<Notifications.EventSubscription>(null);
 
   useEffect(() => {
     setupChannels();
     loadNotifications().then(setNotifications);
-    registerForPush().then(setToken);
+    registerForPush().then(setToken).catch((e) => setError(String(e)));
 
     // Listen for incoming notifications
     const notifSub = Notifications.addNotificationReceivedListener(
@@ -192,13 +192,11 @@ export default function App() {
       </View>
 
       {/* Token display */}
-      {token && (
-        <View style={styles.tokenBar}>
-          <Text style={styles.tokenText} numberOfLines={1}>
-            {token}
-          </Text>
-        </View>
-      )}
+      <View style={styles.tokenBar}>
+        <Text style={styles.tokenText} numberOfLines={4} selectable>
+          {error ? `ERROR: ${error}` : token ?? "Waiting for push token..."}
+        </Text>
+      </View>
 
       {/* Notification list */}
       {notifications.length === 0 ? (

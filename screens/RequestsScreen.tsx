@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { API_BASE_URL, API_KEY } from "../constants";
+import { colors, fonts, spacing } from "../theme";
 
 interface PagerRequest {
   id: string;
@@ -28,9 +30,9 @@ const PRIORITY_CONFIG: Record<
   PagerRequest["priority"],
   { color: string; label: string }
 > = {
-  high: { color: "#EF4444", label: "HIGH" },
-  medium: { color: "#EAB308", label: "MEDIUM" },
-  low: { color: "#3B82F6", label: "LOW" },
+  high: { color: colors.urgent, label: "HIGH" },
+  medium: { color: colors.alert, label: "MED" },
+  low: { color: colors.info, label: "LOW" },
 };
 
 const headers = {
@@ -38,10 +40,17 @@ const headers = {
   "Content-Type": "application/json",
 };
 
+function pad(n: number): string {
+  return n.toString().padStart(2, "0");
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatClock(d: Date): string {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function RequestsScreen() {
@@ -49,6 +58,39 @@ export default function RequestsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [clock, setClock] = useState<string>(() => formatClock(new Date()));
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleEditing = (id: string, original: string) => {
+    setEditingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Seed the edit buffer with the original text on first entry.
+        setEdits((prevEdits) =>
+          prevEdits[id] === undefined ? { ...prevEdits, [id]: original } : prevEdits
+        );
+      }
+      return next;
+    });
+  };
+
+  const resetEdit = (id: string, original: string) => {
+    setEdits((prev) => ({ ...prev, [id]: original }));
+  };
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -67,12 +109,10 @@ export default function RequestsScreen() {
     }
   }, []);
 
-  // Initial fetch
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
 
-  // Refetch when app comes to foreground
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") fetchRequests();
@@ -80,11 +120,16 @@ export default function RequestsScreen() {
     return () => sub.remove();
   }, [fetchRequests]);
 
-  // Poll every 15s while screen is mounted
   useEffect(() => {
-    const interval = setInterval(fetchRequests, 15000);
+    const interval = setInterval(fetchRequests, 60000);
     return () => clearInterval(interval);
   }, [fetchRequests]);
+
+  useEffect(() => {
+    const tick = () => setClock(formatClock(new Date()));
+    const interval = setInterval(tick, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -93,11 +138,18 @@ export default function RequestsScreen() {
 
   const handleAction = async (id: string, status: "approved" | "rejected") => {
     setActioning((prev) => new Set(prev).add(id));
+    const original = requests.find((r) => r.id === id)?.proposed_action ?? "";
+    const edited = edits[id];
+    const sendEdit =
+      status === "approved" &&
+      typeof edited === "string" &&
+      edited.trim().length > 0 &&
+      edited !== original;
     try {
       const res = await fetch(`${API_BASE_URL}/requests/${id}`, {
         method: "PATCH",
         headers,
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(sendEdit ? { status, proposed_action: edited } : { status }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setRequests((prev) => prev.filter((r) => r.id !== id));
@@ -115,89 +167,189 @@ export default function RequestsScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#666" size="large" />
+        <ActivityIndicator color={colors.textFaint} size="large" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <View style={styles.headerLeftBar} />
+        <View style={styles.headerInner}>
+          <Text style={styles.headerTitle}>REQUESTS</Text>
+          <View style={styles.headerDivider} />
+          <Text style={styles.headerStatusLine}>
+            {clock} <Text style={styles.dim}>·</Text> {requests.length} PENDING <Text style={styles.dim}>·</Text> POLL 60s
+          </Text>
+        </View>
+      </View>
+
       <FlatList
         data={requests}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={
-          requests.length === 0 ? styles.listEmpty : styles.list
-        }
+        contentContainerStyle={requests.length === 0 ? styles.listEmpty : styles.list}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#666"
-            colors={["#666"]}
+            tintColor={colors.textFaint}
+            colors={[colors.textFaint]}
           />
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={styles.emptyText}>No pending requests</Text>
+            <Feather name="inbox" size={42} color={colors.textFaint} />
+            <Text style={styles.emptyText}>NO PENDING REQUESTS</Text>
+            <Text style={styles.emptyHint}>pull down to sync</Text>
           </View>
         }
         renderItem={({ item }) => {
-            const priority = PRIORITY_CONFIG[item.priority];
-            const isActioning = actioning.has(item.id);
-            return (
-              <View
-                style={[styles.card, { borderLeftColor: priority.color }]}
-              >
-                <View style={styles.cardHeader}>
-                  <View
-                    style={[
-                      styles.badge,
-                      { backgroundColor: priority.color },
-                    ]}
-                  >
-                    <Text style={styles.badgeText}>{priority.label}</Text>
-                  </View>
-                  <Text style={styles.time}>
-                    {formatDate(item.created_at)}
-                  </Text>
+          const priority = PRIORITY_CONFIG[item.priority] ?? PRIORITY_CONFIG.low;
+          const isActioning = actioning.has(item.id);
+          const isExpanded = expanded.has(item.id);
+          return (
+            <View style={[styles.card, { borderLeftColor: priority.color }]}>
+              {/* TOP ROW */}
+              <View style={styles.cardTopRow}>
+                <View style={[styles.badge, { backgroundColor: priority.color }]}>
+                  <Text style={styles.badgeText}>{priority.label}</Text>
                 </View>
-                <Text style={styles.summary} numberOfLines={2}>{item.email_subject}</Text>
-                <Text style={styles.detail}>
-                  📧 {item.email_sender}
+                <Text style={styles.cardDashes} numberOfLines={1}>
+                  {"────────────────────"}
                 </Text>
-                <Text style={styles.bodyText} numberOfLines={3}>
-                  {item.summary}
-                </Text>
-                <View style={styles.actionBox}>
-                  <Text style={styles.actionLabel}>Proposed action:</Text>
-                  <Text style={styles.actionText}>
-                    {item.proposed_action}
-                  </Text>
-                </View>
-                <View style={styles.buttons}>
-                  <Pressable
-                    style={[styles.btn, styles.approveBtn]}
-                    onPress={() => handleAction(item.id, "approved")}
-                    disabled={isActioning}
-                  >
-                    <Text style={styles.btnText}>
-                      {isActioning ? "..." : "Approve"}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.btn, styles.rejectBtn]}
-                    onPress={() => handleAction(item.id, "rejected")}
-                    disabled={isActioning}
-                  >
-                    <Text style={styles.btnText}>
-                      {isActioning ? "..." : "Reject"}
-                    </Text>
-                  </Pressable>
-                </View>
+                <Text style={styles.cardTime}>{formatDate(item.created_at)}</Text>
               </View>
-            );
-          }}
+
+              {/* CONTENT — tap to expand/collapse */}
+              <Pressable onPress={() => toggleExpanded(item.id)}>
+                <Text style={styles.subject} numberOfLines={isExpanded ? undefined : 2}>
+                  {item.email_subject}
+                </Text>
+                <Text style={styles.sender} numberOfLines={isExpanded ? undefined : 1}>
+                  <Text style={styles.senderLabel}>FROM  </Text>
+                  {item.email_sender}
+                </Text>
+
+                {item.summary ? (
+                  <>
+                    <View style={styles.innerDivider} />
+                    <Text
+                      style={styles.summaryText}
+                      numberOfLines={isExpanded ? undefined : 4}
+                    >
+                      {item.summary}
+                    </Text>
+                  </>
+                ) : null}
+
+                {item.proposed_action ? (
+                  <View style={styles.proposedBlock}>
+                    <View style={styles.proposedHeaderRow}>
+                      <Text style={styles.proposedLabel}>
+                        {">  PROPOSED"}
+                        {edits[item.id] !== undefined && edits[item.id] !== item.proposed_action ? (
+                          <Text style={styles.editedTag}>  [edited]</Text>
+                        ) : null}
+                      </Text>
+                      <View style={styles.proposedActions}>
+                        {editingIds.has(item.id) &&
+                        edits[item.id] !== undefined &&
+                        edits[item.id] !== item.proposed_action ? (
+                          <Pressable
+                            onPress={() => resetEdit(item.id, item.proposed_action)}
+                            hitSlop={8}
+                          >
+                            <View style={styles.miniBtn}>
+                              <Feather name="rotate-ccw" size={11} color={colors.textFaint} />
+                              <Text style={styles.miniBtnText}>RESET</Text>
+                            </View>
+                          </Pressable>
+                        ) : null}
+                        <Pressable
+                          onPress={() => toggleEditing(item.id, item.proposed_action)}
+                          hitSlop={8}
+                        >
+                          <View style={styles.miniBtn}>
+                            <Feather
+                              name={editingIds.has(item.id) ? "check" : "edit-2"}
+                              size={11}
+                              color={colors.accent}
+                            />
+                            <Text style={[styles.miniBtnText, { color: colors.accent }]}>
+                              {editingIds.has(item.id) ? "DONE" : "EDIT"}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      </View>
+                    </View>
+                    {editingIds.has(item.id) ? (
+                      <TextInput
+                        style={[styles.proposedText, styles.proposedInput]}
+                        value={edits[item.id] ?? item.proposed_action}
+                        onChangeText={(t) =>
+                          setEdits((prev) => ({ ...prev, [item.id]: t }))
+                        }
+                        multiline
+                        autoFocus
+                        selectionColor={colors.accent}
+                      />
+                    ) : (
+                      <Text
+                        style={styles.proposedText}
+                        numberOfLines={isExpanded ? undefined : 3}
+                      >
+                        {edits[item.id] ?? item.proposed_action}
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+
+                <View style={styles.expandHintRow}>
+                  <Feather
+                    name={isExpanded ? "chevron-up" : "chevron-down"}
+                    size={12}
+                    color={colors.textFaint}
+                  />
+                  <Text style={styles.expandHintText}>
+                    {isExpanded ? "LESS" : "MORE"}
+                  </Text>
+                </View>
+              </Pressable>
+
+              {/* ACTIONS */}
+              <View style={styles.buttons}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.btn,
+                    styles.approveBtn,
+                    pressed && styles.btnPressed,
+                  ]}
+                  onPress={() => handleAction(item.id, "approved")}
+                  disabled={isActioning}
+                >
+                  <Text style={styles.approveBtnText}>
+                    {isActioning ? "[ ... ]" : "[  ✓  APPROVE  ]"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.btn,
+                    styles.rejectBtn,
+                    pressed && styles.btnPressed,
+                  ]}
+                  onPress={() => handleAction(item.id, "rejected")}
+                  disabled={isActioning}
+                >
+                  <Text style={styles.rejectBtnText}>
+                    {isActioning ? "[ ... ]" : "[  ✕  REJECT  ]"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        }}
       />
     </View>
   );
@@ -206,116 +358,262 @@ export default function RequestsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
+  dim: {
+    color: colors.textFaint,
   },
-  emptyText: {
-    color: "#555",
-    fontSize: 16,
+
+  // HEADER
+  header: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    paddingTop: 56,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  list: {
-    padding: 12,
+  headerLeftBar: {
+    width: 3,
+    backgroundColor: colors.accent,
+    marginRight: spacing.md,
+    alignSelf: "stretch",
   },
-  listEmpty: {
-    flexGrow: 1,
+  headerInner: { flex: 1 },
+  headerTitle: {
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 4,
   },
+  headerDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  headerStatusLine: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+
+  // EMPTY
+  listEmpty: { flexGrow: 1 },
   empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  card: {
-    backgroundColor: "#1A1A1A",
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 10,
-    borderLeftWidth: 4,
+  emptyText: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 2,
+    marginTop: spacing.md,
   },
-  cardHeader: {
+  emptyHint: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    marginTop: spacing.sm,
+    letterSpacing: 0.5,
+  },
+
+  // LIST + CARDS
+  list: {
+    padding: spacing.md,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: colors.border,
+    borderRightColor: colors.border,
+    borderBottomColor: colors.border,
+  },
+  cardTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   badge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
   },
   badgeText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontFamily: fonts.mono,
+    fontSize: 10,
     fontWeight: "700",
+    letterSpacing: 1,
   },
-  time: {
-    color: "#666",
-    fontSize: 12,
-  },
-  summary: {
-    color: "#EEEEEE",
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  detail: {
-    color: "#999",
-    fontSize: 13,
-    marginBottom: 4,
-  },
-  bodyText: {
-    color: "#BBBBBB",
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  actionBox: {
-    backgroundColor: "#222",
-    borderRadius: 6,
-    padding: 10,
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  actionLabel: {
-    color: "#666",
+  cardDashes: {
+    color: colors.border,
+    fontFamily: fonts.mono,
     fontSize: 11,
-    fontWeight: "600",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    marginHorizontal: spacing.sm,
+    flex: 1,
+    overflow: "hidden",
   },
-  actionText: {
-    color: "#CCC",
+  cardTime: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+  },
+
+  subject: {
+    color: colors.text,
+    fontFamily: fonts.mono,
     fontSize: 14,
+    fontWeight: "700",
     lineHeight: 20,
+    marginBottom: spacing.xs,
   },
+  sender: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    marginBottom: spacing.xs,
+  },
+  senderLabel: {
+    color: colors.textFaint,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+
+  innerDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  summaryText: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  proposedBlock: {
+    marginTop: spacing.md,
+    paddingLeft: spacing.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+  },
+  proposedHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  proposedActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  miniBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: colors.borderBright,
+  },
+  miniBtnText: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+  },
+  editedTag: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    fontWeight: "400",
+    letterSpacing: 1,
+  },
+  proposedLabel: {
+    color: colors.accent,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+  },
+  proposedText: {
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  proposedInput: {
+    padding: 0,
+    marginTop: 2,
+    textAlignVertical: "top",
+  },
+
+  expandHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  expandHintText: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 2,
+  },
+
   buttons: {
     flexDirection: "row",
-    gap: 10,
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   btn: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
+    paddingVertical: spacing.sm + 2,
     alignItems: "center",
+    borderWidth: 1,
+    backgroundColor: colors.bg,
+  },
+  btnPressed: {
+    opacity: 0.6,
   },
   approveBtn: {
-    backgroundColor: "#16A34A",
+    borderColor: colors.accent,
   },
   rejectBtn: {
-    backgroundColor: "#DC2626",
+    borderColor: colors.borderBright,
   },
-  btnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
+  approveBtnText: {
+    color: colors.accent,
+    fontFamily: fonts.mono,
+    fontSize: 12,
     fontWeight: "700",
+    letterSpacing: 1.5,
+  },
+  rejectBtnText: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.5,
   },
 });

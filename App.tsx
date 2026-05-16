@@ -2,11 +2,16 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
-import { Text } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import PushListScreen from "./screens/PushListScreen";
 import PushDetailScreen from "./screens/PushDetailScreen";
 import RequestsScreen from "./screens/RequestsScreen";
+import SettingsScreen from "./screens/SettingsScreen";
 import type { PushStackParamList } from "./screens/PushListScreen";
+import { TokenProvider } from "./tokenContext";
+import { ToastProvider } from "./components/Toast";
+import { colors, fonts } from "./theme";
 
 const Tab = createBottomTabNavigator();
 const PushStack = createNativeStackNavigator<PushStackParamList>();
@@ -16,7 +21,7 @@ function NotificationsStack() {
     <PushStack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "#111111" },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <PushStack.Screen name="PushList" component={PushListScreen} />
@@ -26,48 +31,95 @@ function NotificationsStack() {
         options={{
           headerShown: true,
           headerTitle: "",
-          headerStyle: { backgroundColor: "#1A1A1A" },
-          headerTintColor: "#FFFFFF",
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
         }}
       />
     </PushStack.Navigator>
   );
 }
 
+function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const barHeight = 56 + insets.bottom;
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          height: barHeight,
+          paddingTop: 0,
+          paddingBottom: insets.bottom,
+        },
+        tabBarItemStyle: {
+          paddingTop: 0,
+          paddingBottom: 0,
+        },
+        tabBarIconStyle: {
+          flex: 1,
+          alignSelf: "center",
+        },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textFaint,
+      }}
+    >
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="bell" size={size} color={color} />
+          ),
+          tabBarBadgeStyle: {
+            backgroundColor: "transparent",
+            color: colors.accent,
+            fontFamily: fonts.mono,
+            fontSize: 12,
+            fontWeight: "700",
+            minWidth: 0,
+            paddingHorizontal: 0,
+            borderWidth: 0,
+          },
+        }}
+      />
+      <Tab.Screen
+        name="Requests"
+        component={RequestsScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="check-square" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="settings" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
 export default function App() {
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: "#1A1A1A",
-            borderTopColor: "#333",
-          },
-          tabBarActiveTintColor: "#FFFFFF",
-          tabBarInactiveTintColor: "#666",
-        }}
-      >
-        <Tab.Screen
-          name="Notifications"
-          component={NotificationsStack}
-          options={{
-            tabBarIcon: ({ color }) => (
-              <Text style={{ fontSize: 20, color }}>{"\u{1F4DF}"}</Text>
-            ),
-          }}
-        />
-        <Tab.Screen
-          name="Requests"
-          component={RequestsScreen}
-          options={{
-            tabBarIcon: ({ color }) => (
-              <Text style={{ fontSize: 20, color }}>{"\u{1F4CB}"}</Text>
-            ),
-          }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <ToastProvider>
+        <TokenProvider>
+          <NavigationContainer>
+            <StatusBar style="light" />
+            <MainTabs />
+          </NavigationContainer>
+        </TokenProvider>
+      </ToastProvider>
+    </SafeAreaProvider>
   );
 }

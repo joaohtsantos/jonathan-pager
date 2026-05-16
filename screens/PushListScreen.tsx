@@ -1,30 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { API_BASE_URL, API_KEY } from "../constants";
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+import { colors, fonts, spacing } from "../theme";
+import ConfirmModal from "../components/ConfirmModal";
+import { useToast } from "../components/Toast";
 
 type Category = "urgent" | "alert" | "info";
 
@@ -44,10 +34,10 @@ export type PushStackParamList = {
   PushDetail: { id: string };
 };
 
-const CATEGORY_CONFIG: Record<Category, { color: string; icon: string; label: string }> = {
-  urgent: { color: "#EF4444", icon: "\u{1F534}", label: "URGENT" },
-  alert: { color: "#EAB308", icon: "\u{1F7E1}", label: "ALERT" },
-  info: { color: "#3B82F6", icon: "\u{1F535}", label: "INFO" },
+const CATEGORY_CONFIG: Record<Category, { color: string; label: string }> = {
+  urgent: { color: colors.urgent, label: "URGENT" },
+  alert: { color: colors.alert, label: "ALERT" },
+  info: { color: colors.info, label: "INFO" },
 };
 
 const headers = {
@@ -55,62 +45,17 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-async function setupChannels() {
-  if (Platform.OS !== "android") return;
-
-  await Notifications.setNotificationChannelAsync("urgent", {
-    name: "Urgent",
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 500, 200, 500, 200, 500],
-    lightColor: "#EF4444",
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    sound: "default",
-  });
-
-  await Notifications.setNotificationChannelAsync("alert", {
-    name: "Alert",
-    importance: Notifications.AndroidImportance.HIGH,
-    vibrationPattern: [0, 400, 200, 400],
-    lightColor: "#EAB308",
-    sound: "default",
-  });
-
-  await Notifications.setNotificationChannelAsync("info", {
-    name: "Info",
-    importance: Notifications.AndroidImportance.DEFAULT,
-    vibrationPattern: [0, 200],
-    lightColor: "#3B82F6",
-    sound: "default",
-  });
-}
-
-async function registerForPush(): Promise<string> {
-  if (!Device.isDevice) {
-    throw new Error("Push notifications require a physical device");
-  }
-
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-
-  if (existing !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    throw new Error(`Permission not granted (status: ${finalStatus})`);
-  }
-
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: "00f38f4e-21a0-43da-b440-20c6a09679a4",
-  });
-  return tokenData.data;
+function pad(n: number): string {
+  return n.toString().padStart(2, "0");
 }
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatClock(d: Date): string {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function PushListScreen() {
@@ -118,8 +63,9 @@ export default function PushListScreen() {
   const [pushes, setPushes] = useState<Push[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [clock, setClock] = useState<string>(() => formatClock(new Date()));
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const toast = useToast();
   const notificationListener = useRef<Notifications.EventSubscription>(null);
 
   const fetchPushes = useCallback(async () => {
@@ -151,8 +97,6 @@ export default function PushListScreen() {
   }, [navigation]);
 
   useEffect(() => {
-    setupChannels();
-    registerForPush().then(setToken).catch((e) => setError(String(e)));
     fetchPushes();
     fetchUnreadCount();
 
@@ -188,7 +132,12 @@ export default function PushListScreen() {
     };
   }, [fetchPushes, fetchUnreadCount]);
 
-  // Refetch when screen comes back into focus (e.g. after marking read in detail)
+  useEffect(() => {
+    const tick = () => setClock(formatClock(new Date()));
+    const interval = setInterval(tick, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       fetchPushes();
@@ -203,68 +152,90 @@ export default function PushListScreen() {
     fetchUnreadCount();
   }, [fetchPushes, fetchUnreadCount]);
 
+  const unreadCount = pushes.filter((p) => !p.read).length;
+
+  const markAllRead = () => {
+    if (unreadCount === 0) return;
+    setConfirmOpen(true);
+  };
+
+  const confirmMarkAllRead = async () => {
+    setConfirmOpen(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/pushes/read-all`, {
+        method: "POST",
+        headers,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const now = new Date().toISOString();
+      setPushes((prev) =>
+        prev.map((p) => (p.read ? p : { ...p, read: 1, read_at: now }))
+      );
+      fetchUnreadCount();
+      toast.show("MARKED ALL READ");
+    } catch (e) {
+      console.error("Failed to mark all read:", e);
+    }
+  };
+
   const toggleRead = async (push: Push) => {
     const newRead = push.read ? 0 : 1;
-    const label = newRead ? "Mark as read" : "Mark as unread";
-    Alert.alert(label, `${label} "${push.title}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: label,
-        onPress: async () => {
-          try {
-            const res = await fetch(`${API_BASE_URL}/pushes/${push.id}`, {
-              method: "PATCH",
-              headers,
-              body: JSON.stringify({ read: !!newRead }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            setPushes((prev) =>
-              prev.map((p) =>
-                p.id === push.id ? { ...p, read: newRead, read_at: newRead ? new Date().toISOString() : null } : p
-              )
-            );
-            fetchUnreadCount();
-          } catch (e) {
-            console.error("Failed to toggle read:", e);
-          }
-        },
-      },
-    ]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/pushes/${push.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ read: !!newRead }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setPushes((prev) =>
+        prev.map((p) =>
+          p.id === push.id
+            ? { ...p, read: newRead, read_at: newRead ? new Date().toISOString() : null }
+            : p
+        )
+      );
+      fetchUnreadCount();
+      toast.show(newRead ? "MARKED READ" : "MARKED UNREAD");
+    } catch (e) {
+      console.error("Failed to toggle read:", e);
+    }
   };
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#666" size="large" />
+        <ActivityIndicator color={colors.textFaint} size="large" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {/* HEADER ─ pager-style status frame */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>PAGER</Text>
+        <View style={styles.headerLeftBar} />
+        <View style={styles.headerInner}>
+          <View style={styles.headerTopRow}>
+            <Text style={styles.headerTitle}>PAGER</Text>
+            {unreadCount > 0 ? (
+              <Pressable onPress={markAllRead} hitSlop={8}>
+                <Text style={styles.headerAction}>[ MARK ALL · {unreadCount} ]</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.headerDivider} />
+          <Text style={styles.headerStatusLine}>
+            {clock} <Text style={styles.headerDim}>·</Text> SYNC OK <Text style={styles.headerDim}>·</Text> TX {pushes.length}
+          </Text>
+        </View>
       </View>
 
-      <Pressable
-        style={styles.tokenBar}
-        onPress={() => {
-          if (token) {
-            Clipboard.setStringAsync(token);
-            Alert.alert("Copied!", "Push token copied to clipboard");
-          }
-        }}
-      >
-        <Text style={styles.tokenText} numberOfLines={4} selectable>
-          {error ? `ERROR: ${error}` : token ?? "Waiting for push token..."}
-        </Text>
-        {token && <Text style={styles.copyHint}>TAP TO COPY</Text>}
-      </Pressable>
-
+      {/* LIST */}
       {pushes.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.empty}>
           <Text style={styles.emptyIcon}>{"\u{1F4DF}"}</Text>
-          <Text style={styles.emptyText}>No notifications yet</Text>
+          <Text style={styles.emptyText}>NO TRAFFIC</Text>
+          <Text style={styles.emptyHint}>pull down to sync</Text>
         </View>
       ) : (
         <FlatList
@@ -275,8 +246,8 @@ export default function PushListScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#666"
-              colors={["#666"]}
+              tintColor={colors.textFaint}
+              colors={[colors.textFaint]}
             />
           }
           renderItem={({ item }) => {
@@ -288,37 +259,44 @@ export default function PushListScreen() {
                 onLongPress={() => toggleRead(item)}
               >
                 <View style={[styles.card, { borderLeftColor: config.color }]}>
-                  <View style={styles.cardRow}>
-                    {isUnread && <View style={styles.unreadDot} />}
-                    <View style={styles.cardContent}>
-                      <View style={styles.cardHeader}>
-                        <View style={[styles.badge, { backgroundColor: config.color }]}>
-                          <Text style={styles.badgeText}>
-                            {config.icon} {config.label}
-                          </Text>
-                        </View>
-                        <Text style={styles.time}>{formatDate(item.created_at)}</Text>
-                      </View>
-                      <Text
-                        style={[styles.title, { color: isUnread ? "#FFFFFF" : "#999", fontWeight: isUnread ? "700" : "400" }]}
-                        numberOfLines={1}
-                      >
-                        {item.title}
-                      </Text>
-                      {item.body ? (
-                        <Text style={styles.body} numberOfLines={2}>
-                          {item.body}
-                        </Text>
-                      ) : null}
-                      <Text style={styles.source}>{item.source}</Text>
+                  <View style={styles.cardTopRow}>
+                    <View style={[styles.badge, { backgroundColor: config.color }]}>
+                      <Text style={styles.badgeText}>{config.label}</Text>
                     </View>
+                    <Text style={styles.cardDashes} numberOfLines={1}>
+                      {"────────────────────"}
+                    </Text>
+                    <Text style={styles.cardTime}>{formatDate(item.created_at)}</Text>
                   </View>
+                  <Text
+                    style={[styles.cardTitle, !isUnread && styles.cardTitleRead]}
+                    numberOfLines={1}
+                  >
+                    {isUnread ? "> " : "  "}
+                    {item.title}
+                  </Text>
+                  {item.body ? (
+                    <Text style={styles.cardBody} numberOfLines={2}>
+                      {item.body}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.cardSource}>:: {item.source}</Text>
                 </View>
               </Pressable>
             );
           }}
         />
       )}
+
+      <ConfirmModal
+        visible={confirmOpen}
+        title="MARK ALL READ"
+        body={`Mark ${unreadCount} push${unreadCount === 1 ? "" : "es"} as read?`}
+        confirmLabel="MARK ALL"
+        cancelLabel="CANCEL"
+        onConfirm={confirmMarkAllRead}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </View>
   );
 }
@@ -326,117 +304,160 @@ export default function PushListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
   },
+
+  // HEADER
   header: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    backgroundColor: colors.surface,
     paddingTop: 56,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    backgroundColor: "#1A1A1A",
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: colors.border,
+  },
+  headerLeftBar: {
+    width: 3,
+    backgroundColor: colors.accent,
+    marginRight: spacing.md,
+    alignSelf: "stretch",
+  },
+  headerInner: { flex: 1 },
+  headerTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
   },
   headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "800",
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 20,
+    fontWeight: "700",
     letterSpacing: 4,
   },
-  tokenBar: {
-    backgroundColor: "#1A1A1A",
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#222",
-  },
-  tokenText: {
-    color: "#555",
-    fontSize: 10,
-    fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
-  },
-  copyHint: {
-    color: "#3B82F6",
-    fontSize: 9,
-    fontWeight: "600",
-    marginTop: 4,
+  headerAction: {
+    color: colors.accent,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 1,
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  headerStatusLine: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  headerDim: {
+    color: colors.textFaint,
+  },
+
+  // EMPTY
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
   },
   emptyIcon: {
     fontSize: 48,
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   emptyText: {
-    color: "#555",
-    fontSize: 16,
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 3,
   },
+  emptyHint: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    marginTop: spacing.sm,
+    letterSpacing: 0.5,
+  },
+
+  // LIST + CARDS
   list: {
-    padding: 12,
+    padding: spacing.md,
   },
   card: {
-    backgroundColor: "#1A1A1A",
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 10,
-    borderLeftWidth: 4,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: colors.border,
+    borderRightColor: colors.border,
+    borderBottomColor: colors.border,
   },
-  cardRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#3B82F6",
-    marginTop: 6,
-    marginRight: 10,
-  },
-  cardContent: {
-    flex: 1,
-  },
-  cardHeader: {
+  cardTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   badge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
   },
   badgeText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontFamily: fonts.mono,
+    fontSize: 10,
     fontWeight: "700",
+    letterSpacing: 1,
   },
-  time: {
-    color: "#666",
-    fontSize: 12,
-  },
-  title: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  body: {
-    color: "#999999",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  source: {
-    color: "#555",
+  cardDashes: {
+    color: colors.border,
+    fontFamily: fonts.mono,
     fontSize: 11,
-    marginTop: 6,
-    textTransform: "uppercase",
+    marginHorizontal: spacing.sm,
+    flex: 1,
+    overflow: "hidden",
+  },
+  cardTime: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+  },
+  cardTitle: {
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
+  },
+  cardTitleRead: {
+    color: colors.textDim,
+    fontWeight: "400",
+  },
+  cardBody: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: spacing.xs,
+  },
+  cardSource: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 9,
     letterSpacing: 0.5,
+    marginTop: spacing.xs,
   },
 });

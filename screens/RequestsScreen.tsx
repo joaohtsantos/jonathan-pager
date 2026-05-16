@@ -122,25 +122,27 @@ export default function RequestsScreen() {
 
   return (
     <View style={styles.container}>
-      {requests.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyText}>No pending requests</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={requests}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#666"
-              colors={["#666"]}
-            />
-          }
-          renderItem={({ item }) => {
+      <FlatList
+        data={requests}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={
+          requests.length === 0 ? styles.listEmpty : styles.list
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#666"
+            colors={["#666"]}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>📋</Text>
+            <Text style={styles.emptyText}>No pending requests</Text>
+          </View>
+        }
+        renderItem={({ item }) => {
             const priority = PRIORITY_CONFIG[item.priority];
             const isActioning = actioning.has(item.id);
             return (
@@ -196,8 +198,7 @@ export default function RequestsScreen() {
               </View>
             );
           }}
-        />
-      )}
+      />
     </View>
   );
 }
@@ -223,6 +224,14 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 12,
+  },
+  listEmpty: {
+    flexGrow: 1,
+  },
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   card: {
     backgroundColor: "#1A1A1A",

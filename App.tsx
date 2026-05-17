@@ -8,8 +8,10 @@ import PushListScreen from "./screens/PushListScreen";
 import PushDetailScreen from "./screens/PushDetailScreen";
 import RequestsScreen from "./screens/RequestsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import LocationScreen from "./screens/LocationScreen";
 import type { PushStackParamList } from "./screens/PushListScreen";
 import { TokenProvider } from "./tokenContext";
+import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
 import { colors, fonts } from "./theme";
 
@@ -97,6 +99,15 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
+        name="Location"
+        component={LocationScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="map-pin" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
@@ -114,10 +125,12 @@ export default function App() {
     <SafeAreaProvider>
       <ToastProvider>
         <TokenProvider>
-          <NavigationContainer>
-            <StatusBar style="light" />
-            <MainTabs />
-          </NavigationContainer>
+          <LocationProvider>
+            <NavigationContainer>
+              <StatusBar style="light" />
+              <MainTabs />
+            </NavigationContainer>
+          </LocationProvider>
         </TokenProvider>
       </ToastProvider>
     </SafeAreaProvider>

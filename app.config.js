@@ -21,7 +21,15 @@ export default {
         backgroundImage: "./assets/android-icon-background.png",
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
-      permissions: ["RECEIVE_BOOT_COMPLETED", "VIBRATE"],
+      permissions: [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+      ],
     },
     plugins: [
       [
@@ -29,6 +37,19 @@ export default {
         {
           icon: "./assets/icon.png",
           color: "#111111",
+        },
+      ],
+      [
+        "expo-location",
+        {
+          locationAlwaysAndWhenInUsePermission:
+            "Pager precisa da sua localização em background pra detectar quando você entra/sai de zonas (Casa, Segura, etc).",
+          locationAlwaysPermission:
+            "Pager precisa da sua localização em background pra detectar quando você entra/sai de zonas.",
+          locationWhenInUsePermission:
+            "Pager mostra sua localização atual e te deixa cadastrar zonas usando a posição atual.",
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true,
         },
       ],
     ],

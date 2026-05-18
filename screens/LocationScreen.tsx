@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -65,11 +64,6 @@ function rangeStartISO(range: HistoryRange): string {
 
 export default function LocationScreen() {
   const {
-    foreground,
-    background,
-    requestForeground,
-    requestBackground,
-    refreshPermissions,
     zones,
     zonesLoading,
     zonesError,
@@ -81,8 +75,6 @@ export default function LocationScreen() {
     currentError,
     refreshCurrent,
     tracking,
-    stopTracking,
-    startTracking,
   } = useLocation();
 
   const [editing, setEditing] = useState<EditingZone | null>(null);
@@ -111,12 +103,9 @@ export default function LocationScreen() {
     loadHistory(historyRange);
   }, [historyRange]);
 
-  const fgGranted = foreground === Location.PermissionStatus.GRANTED;
-  const bgGranted = background === Location.PermissionStatus.GRANTED;
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refreshZones(), refreshCurrent(), refreshPermissions(), loadHistory(historyRange)]);
+    await Promise.all([refreshZones(), refreshCurrent(), loadHistory(historyRange)]);
     setRefreshing(false);
   };
 
@@ -208,6 +197,47 @@ export default function LocationScreen() {
           {currentError ? <Text style={styles.errorText}>ERROR: {currentError}</Text> : null}
         </View>
 
+        {/* ZONES */}
+        <View style={styles.block}>
+          <View style={styles.blockHeaderRow}>
+            <Text style={styles.blockHeader}>ZONES</Text>
+            <Pressable
+              onPress={() => setEditing({ radius: 100 })}
+              hitSlop={8}
+              style={styles.addBtn}
+            >
+              <Feather name="plus" size={12} color={colors.accent} />
+              <Text style={styles.addBtnText}>ADD</Text>
+            </Pressable>
+          </View>
+          <View style={styles.blockDivider} />
+
+          {zonesError ? <Text style={styles.errorText}>ERROR: {zonesError}</Text> : null}
+          {zonesLoading && zones.length === 0 ? (
+            <Text style={styles.dim}>Loading…</Text>
+          ) : zones.length === 0 ? (
+            <Text style={styles.dim}>No zones yet. Add one above.</Text>
+          ) : (
+            zones.map(z => (
+              <Pressable
+                key={z.id}
+                onPress={() => setEditing(z)}
+                onLongPress={() => setPendingDelete(z)}
+                style={({ pressed }) => [styles.zoneRow, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.zoneName}>{z.name}</Text>
+                  <Text style={styles.zoneCoords}>
+                    {z.lat.toFixed(4)}, {z.lon.toFixed(4)} · r={Math.round(z.radius)}m
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={14} color={colors.textFaint} />
+              </Pressable>
+            ))
+          )}
+        </View>
+
         {/* HISTORY */}
         <View style={styles.block}>
           <View style={styles.blockHeaderRow}>
@@ -260,94 +290,6 @@ export default function LocationScreen() {
           )}
         </View>
 
-        {/* PERMISSIONS */}
-        {(!fgGranted || !bgGranted) && (
-          <View style={styles.block}>
-            <Text style={styles.blockHeader}>PERMISSIONS</Text>
-            <View style={styles.blockDivider} />
-            <PermissionRow
-              label="FOREGROUND"
-              status={foreground}
-              onRequest={requestForeground}
-            />
-            <PermissionRow
-              label="BACKGROUND"
-              status={background}
-              onRequest={requestBackground}
-              disabled={!fgGranted}
-            />
-            {(foreground === Location.PermissionStatus.DENIED ||
-              background === Location.PermissionStatus.DENIED) && (
-              <Pressable onPress={() => Linking.openSettings()} style={styles.linkBtn}>
-                <Text style={styles.linkBtnText}>[ OPEN SYSTEM SETTINGS ]</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {/* TRACKING TOGGLE */}
-        {bgGranted && (
-          <View style={styles.block}>
-            <View style={styles.blockHeaderRow}>
-              <Text style={styles.blockHeader}>TRACKING</Text>
-              <Pressable
-                onPress={tracking ? stopTracking : startTracking}
-                style={[styles.toggle, tracking && styles.toggleOn]}
-              >
-                <Text style={[styles.toggleText, tracking && styles.toggleTextOn]}>
-                  [ {tracking ? "STOP" : "START"} ]
-                </Text>
-              </Pressable>
-            </View>
-            <View style={styles.blockDivider} />
-            <Text style={styles.dim}>
-              {tracking
-                ? "Background geofence + significant location changes active."
-                : "Press START to begin tracking. Stops after app reinstall or manual stop."}
-            </Text>
-          </View>
-        )}
-
-        {/* ZONES */}
-        <View style={styles.block}>
-          <View style={styles.blockHeaderRow}>
-            <Text style={styles.blockHeader}>ZONES</Text>
-            <Pressable
-              onPress={() => setEditing({ radius: 100 })}
-              hitSlop={8}
-              style={styles.addBtn}
-            >
-              <Feather name="plus" size={12} color={colors.accent} />
-              <Text style={styles.addBtnText}>ADD</Text>
-            </Pressable>
-          </View>
-          <View style={styles.blockDivider} />
-
-          {zonesError ? <Text style={styles.errorText}>ERROR: {zonesError}</Text> : null}
-          {zonesLoading && zones.length === 0 ? (
-            <Text style={styles.dim}>Loading…</Text>
-          ) : zones.length === 0 ? (
-            <Text style={styles.dim}>No zones yet. Add one above.</Text>
-          ) : (
-            zones.map(z => (
-              <Pressable
-                key={z.id}
-                onPress={() => setEditing(z)}
-                onLongPress={() => setPendingDelete(z)}
-                style={({ pressed }) => [styles.zoneRow, pressed && { opacity: 0.6 }]}
-              >
-                <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.zoneName}>{z.name}</Text>
-                  <Text style={styles.zoneCoords}>
-                    {z.lat.toFixed(4)}, {z.lon.toFixed(4)} · r={Math.round(z.radius)}m
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={14} color={colors.textFaint} />
-              </Pressable>
-            ))
-          )}
-        </View>
       </ScrollView>
 
       {/* EDIT/CREATE MODAL */}
@@ -449,37 +391,6 @@ export default function LocationScreen() {
   );
 }
 
-function PermissionRow({
-  label,
-  status,
-  onRequest,
-  disabled,
-}: {
-  label: string;
-  status: Location.PermissionStatus;
-  onRequest: () => Promise<void>;
-  disabled?: boolean;
-}) {
-  const granted = status === Location.PermissionStatus.GRANTED;
-  return (
-    <View style={styles.permRow}>
-      <Text style={styles.permLabel}>{label}</Text>
-      <Text style={[styles.permStatus, granted && { color: colors.accent }]}>
-        {granted ? "✓ GRANTED" : status === Location.PermissionStatus.DENIED ? "✗ DENIED" : "○ NOT SET"}
-      </Text>
-      {!granted ? (
-        <Pressable
-          onPress={onRequest}
-          disabled={disabled}
-          style={[styles.permBtn, disabled && { opacity: 0.4 }]}
-        >
-          <Text style={styles.permBtnText}>[ REQUEST ]</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
 function Field({
   label,
   value,
@@ -549,19 +460,6 @@ const styles = StyleSheet.create({
 
   currentText: { color: colors.text, fontFamily: fonts.mono, fontSize: 14, marginBottom: 4 },
   errorText: { color: colors.urgent, fontFamily: fonts.mono, fontSize: 11, marginTop: 4 },
-
-  permRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6, gap: spacing.sm },
-  permLabel: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 11, fontWeight: "700", letterSpacing: 1, width: 110 },
-  permStatus: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 11, flex: 1 },
-  permBtn: { paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.accent },
-  permBtnText: { color: colors.accent, fontFamily: fonts.mono, fontSize: 10, fontWeight: "700", letterSpacing: 1.5 },
-  linkBtn: { marginTop: spacing.sm, alignSelf: "flex-start", paddingVertical: 4 },
-  linkBtnText: { color: colors.accent, fontFamily: fonts.mono, fontSize: 11, letterSpacing: 1 },
-
-  toggle: { paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.borderBright },
-  toggleOn: { borderColor: colors.accent },
-  toggleText: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 10, fontWeight: "700", letterSpacing: 1.5 },
-  toggleTextOn: { color: colors.accent },
 
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.accent },
   addBtnText: { color: colors.accent, fontFamily: fonts.mono, fontSize: 10, fontWeight: "700", letterSpacing: 1.5 },

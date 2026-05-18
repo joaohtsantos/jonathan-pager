@@ -218,12 +218,16 @@ export default function LocationScreen() {
           ) : zones.length === 0 ? (
             <Text style={styles.dim}>No zones yet. Add one above.</Text>
           ) : (
-            zones.map(z => (
+            zones.map((z, idx) => (
               <Pressable
                 key={z.id}
                 onPress={() => setEditing(z)}
                 onLongPress={() => setPendingDelete(z)}
-                style={({ pressed }) => [styles.zoneRow, pressed && { opacity: 0.6 }]}
+                style={({ pressed }) => [
+                  styles.zoneRow,
+                  idx === 0 && { borderTopWidth: 0 },
+                  pressed && { opacity: 0.6 },
+                ]}
               >
                 <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
                 <View style={{ flex: 1 }}>

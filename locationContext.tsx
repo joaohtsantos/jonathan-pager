@@ -17,6 +17,7 @@ import {
   startBackgroundLocation,
   stopAllLocation,
   getPermissionState,
+  ensureResyncTaskRegistered,
 } from "./locationSetup";
 
 type PermStatus = Location.PermissionStatus;
@@ -155,11 +156,15 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     setTracking(false);
   }, []);
 
-  // Bootstrap: check permissions, load zones + current.
+  // Bootstrap: check permissions, load zones + current, schedule the
+  // periodic resync task (Android WorkManager — survives reboot).
   useEffect(() => {
     refreshPermissions();
     refreshZones();
     refreshCurrent();
+    ensureResyncTaskRegistered().catch(err =>
+      console.error("ensureResyncTaskRegistered failed", err)
+    );
   }, [refreshPermissions, refreshZones, refreshCurrent]);
 
   // Re-check permissions when the app returns to foreground (user may have

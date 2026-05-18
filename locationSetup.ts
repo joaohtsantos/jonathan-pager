@@ -1,9 +1,11 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import * as BackgroundTask from "expo-background-task";
 import { API_BASE_URL, API_KEY } from "./constants";
 
 export const GEOFENCING_TASK = "pager-geofencing";
 export const BG_LOCATION_TASK = "pager-bg-location";
+export const RESYNC_TASK = "pager-resync-geofences";
 
 export type Zone = {
   id: string;
@@ -140,6 +142,28 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }: LocationTaskDat
   }
 });
 
+// Periodic resync — Android maps this to WorkManager, which survives reboot.
+// After a phone restart, this task runs within ~15-60 min and brings geofences
+// back from /location/zones without needing the app to be opened.
+TaskManager.defineTask(RESYNC_TASK, async () => {
+  try {
+    const resp = await fetch(`${API_BASE_URL}/location/zones`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+    if (!resp.ok) {
+      console.error("[resync] fetch zones failed", resp.status);
+      return BackgroundTask.BackgroundTaskResult.Failed;
+    }
+    const zones = (await resp.json()) as Zone[];
+    await syncGeofences(zones);
+    console.log(`[resync] re-registered ${zones.length} geofence(s)`);
+    return BackgroundTask.BackgroundTaskResult.Success;
+  } catch (err) {
+    console.error("[resync] failed", err);
+    return BackgroundTask.BackgroundTaskResult.Failed;
+  }
+});
+
 // ============================================================================
 // Start/stop helpers
 // ============================================================================
@@ -184,6 +208,21 @@ export async function stopAllLocation(): Promise<void> {
   if (geo) await Location.stopGeofencingAsync(GEOFENCING_TASK).catch(() => undefined);
   const bg = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK).catch(() => false);
   if (bg) await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK).catch(() => undefined);
+}
+
+// Idempotent — re-registers the periodic resync if it's not already scheduled.
+// Minimum interval the OS will honour: ~15 min on Android (WorkManager).
+export async function ensureResyncTaskRegistered(): Promise<void> {
+  const status = await BackgroundTask.getStatusAsync();
+  if (status === BackgroundTask.BackgroundTaskStatus.Restricted) {
+    console.warn("[resync] background tasks restricted on this device");
+    return;
+  }
+  const already = await TaskManager.isTaskRegisteredAsync(RESYNC_TASK).catch(() => false);
+  if (already) return;
+  await BackgroundTask.registerTaskAsync(RESYNC_TASK, {
+    minimumInterval: 60, // minutes
+  });
 }
 
 export async function getPermissionState(): Promise<{

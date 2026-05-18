@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "Jonathan Pager",
     slug: "jonathan-pager",
-    version: "1.0.0",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "dark",
@@ -32,6 +32,7 @@ export default {
       ],
     },
     plugins: [
+      "expo-background-task",
       [
         "expo-notifications",
         {

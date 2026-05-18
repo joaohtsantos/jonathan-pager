@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 128 128" width="140" height="140">
+  <title>Jonathan Pager — mark</title>
+  <g transform="rotate(30)">
+    <polygon points="0.00,-52.00 7.88,-47.45 13.74,-33.93 22.52,-22.10 22.52,-13.00 0.00,0.00 -22.52,-13.00 -22.52,-39.00" fill="#C2410C"></polygon>
+    <polygon points="22.52,-13.00 45.03,-0.00 45.03,26.00 22.52,39.00 0.00,26.00 -0.00,0.00" fill="none" stroke="#0A0A0A" stroke-width="3" stroke-linejoin="miter"></polygon>
+    <polygon points="-22.52,-13.00 -0.00,-0.00 0.00,26.00 -22.52,39.00 -45.03,26.00 -45.03,0.00" fill="none" stroke="#0A0A0A" stroke-width="3" stroke-linejoin="miter"></polygon>
+  </g>
+</svg>

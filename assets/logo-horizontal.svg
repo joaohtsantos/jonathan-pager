@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80" width="340" height="80">
+  <title>Jonathan Pager — horizontal lockup</title>
+  <g transform="translate(40 40) rotate(30) scale(0.55)">
+    <polygon points="0.00,-52.00 7.88,-47.45 13.74,-33.93 22.52,-22.10 22.52,-13.00 0.00,0.00 -22.52,-13.00 -22.52,-39.00" fill="#C2410C"></polygon>
+    <polygon points="22.52,-13.00 45.03,-0.00 45.03,26.00 22.52,39.00 0.00,26.00 -0.00,0.00" fill="none" stroke="#E5E5E5" stroke-width="5" stroke-linejoin="miter"></polygon>
+    <polygon points="-22.52,-13.00 -0.00,-0.00 0.00,26.00 -22.52,39.00 -45.03,26.00 -45.03,0.00" fill="none" stroke="#E5E5E5" stroke-width="5" stroke-linejoin="miter"></polygon>
+  </g>
+  <rect x="88" y="22" width="3" height="36" fill="#C2410C"></rect>
+  <text x="106" y="52" font-family="JetBrains Mono, Courier, monospace" font-size="30" font-weight="700" letter-spacing="6" fill="#E5E5E5">PAGER</text>
+</svg>

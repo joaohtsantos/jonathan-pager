@@ -15,10 +15,11 @@ import * as Location from "expo-location";
 import { Feather } from "@expo/vector-icons";
 import { colors, fonts, spacing } from "../theme";
 import { useLocation } from "../locationContext";
-import type { Zone } from "../locationSetup";
+import { locationApi, type HistoryInterval, type Zone } from "../locationSetup";
 import ConfirmModal from "../components/ConfirmModal";
 
 type EditingZone = Partial<Omit<Zone, "id">> & { id?: string };
+type HistoryRange = "24h" | "7d" | "30d";
 
 function formatSince(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -31,6 +32,35 @@ function formatSince(iso: string | null | undefined): string {
   if (hrs < 24) return `${hrs}h ${mins % 60}m ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null || Number.isNaN(ms)) return "ongoing";
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 24) return `${h}h ${m}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
+const SHORT_WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatRangeLabel(iso: string): string {
+  const d = new Date(iso);
+  const wd = SHORT_WD[d.getDay()];
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${wd} ${hh}:${mm}`;
+}
+
+function rangeStartISO(range: HistoryRange): string {
+  const now = new Date();
+  if (range === "24h") now.setDate(now.getDate() - 1);
+  else if (range === "7d") now.setDate(now.getDate() - 7);
+  else now.setDate(now.getDate() - 30);
+  return now.toISOString();
 }
 
 export default function LocationScreen() {
@@ -59,12 +89,34 @@ export default function LocationScreen() {
   const [pendingDelete, setPendingDelete] = useState<Zone | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [historyRange, setHistoryRange] = useState<HistoryRange>("7d");
+  const [history, setHistory] = useState<HistoryInterval[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const loadHistory = async (range: HistoryRange) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const { intervals } = await locationApi.history(rangeStartISO(range));
+      setHistory(intervals.slice().reverse());
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory(historyRange);
+  }, [historyRange]);
+
   const fgGranted = foreground === Location.PermissionStatus.GRANTED;
   const bgGranted = background === Location.PermissionStatus.GRANTED;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refreshZones(), refreshCurrent(), refreshPermissions()]);
+    await Promise.all([refreshZones(), refreshCurrent(), refreshPermissions(), loadHistory(historyRange)]);
     setRefreshing(false);
   };
 
@@ -154,6 +206,58 @@ export default function LocationScreen() {
             <Text style={styles.dim}>last ping {formatSince(current.last_ping)}</Text>
           ) : null}
           {currentError ? <Text style={styles.errorText}>ERROR: {currentError}</Text> : null}
+        </View>
+
+        {/* HISTORY */}
+        <View style={styles.block}>
+          <View style={styles.blockHeaderRow}>
+            <Text style={styles.blockHeader}>HISTORY</Text>
+            <View style={styles.rangeRow}>
+              {(["24h", "7d", "30d"] as HistoryRange[]).map(r => (
+                <Pressable
+                  key={r}
+                  onPress={() => setHistoryRange(r)}
+                  style={[styles.rangeBtn, historyRange === r && styles.rangeBtnActive]}
+                >
+                  <Text style={[styles.rangeBtnText, historyRange === r && styles.rangeBtnTextActive]}>
+                    {r}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={styles.blockDivider} />
+
+          {historyError ? <Text style={styles.errorText}>ERROR: {historyError}</Text> : null}
+          {historyLoading && history.length === 0 ? (
+            <Text style={styles.dim}>Loading…</Text>
+          ) : history.length === 0 ? (
+            <Text style={styles.dim}>No zone visits in this range.</Text>
+          ) : (
+            history.map((iv, idx) => (
+              <View
+                key={`${iv.zone_id}-${iv.from}-${idx}`}
+                style={[styles.historyRow, idx === 0 && { borderTopWidth: 0 }]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyZone}>
+                    {iv.zone_name ?? "(deleted zone)"}
+                  </Text>
+                  <Text style={styles.historyRange}>
+                    {formatRangeLabel(iv.from)}{iv.to ? ` → ${formatRangeLabel(iv.to)}` : " → now"}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.historyDuration,
+                    iv.to === null && { color: colors.accent },
+                  ]}
+                >
+                  {formatDuration(iv.duration_ms)}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
         {/* PERMISSIONS */}
@@ -466,6 +570,17 @@ const styles = StyleSheet.create({
   zoneEmoji: { fontSize: 18 },
   zoneName: { color: colors.text, fontFamily: fonts.mono, fontSize: 13, fontWeight: "700" },
   zoneCoords: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
+
+  rangeRow: { flexDirection: "row", gap: 4 },
+  rangeBtn: { paddingVertical: 3, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.borderBright },
+  rangeBtnActive: { borderColor: colors.accent },
+  rangeBtnText: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
+  rangeBtnTextActive: { color: colors.accent },
+
+  historyRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  historyZone: { color: colors.text, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700" },
+  historyRange: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
+  historyDuration: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
 
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
   editCard: { flexDirection: "row", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderBright, width: "100%", maxWidth: 420 },

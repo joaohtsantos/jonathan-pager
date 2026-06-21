@@ -45,7 +45,7 @@ export type HistoryInterval = {
 };
 
 export type TimelineSegment = {
-  kind: "zone" | "untagged";
+  kind: "zone" | "untagged" | "transit";
   zone_id: string | null;
   label: string;
   emoji: string | null;
@@ -109,11 +109,12 @@ export const locationApi = {
       `/location/timeline?${qs.toString()}`
     );
   },
-  // Retcon a time span to a zone (zoneId) or to Unknown (zoneId = null).
-  createOverride: (from: string, to: string, zoneId: string | null) =>
+  // Retcon a time span to a zone ({zone_id}), Unknown ({kind:"unknown"}), or
+  // transit ({kind:"transit"}).
+  createOverride: (from: string, to: string, target: { zone_id?: string | null; kind?: "unknown" | "transit" }) =>
     apiFetch<{ id: string }>("/location/overrides", {
       method: "POST",
-      body: JSON.stringify({ from, to, zone_id: zoneId }),
+      body: JSON.stringify({ from, to, ...target }),
     }),
 };
 

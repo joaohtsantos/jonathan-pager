@@ -144,12 +144,12 @@ export default function LocationScreen() {
     });
   };
 
-  const correctSegment = async (zoneId: string | null) => {
+  const correctSegment = async (target: { zone_id?: string | null; kind?: "unknown" | "transit" }) => {
     const seg = correcting;
     if (!seg) return;
     setCorrecting(null);
     try {
-      await locationApi.createOverride(seg.from, seg.to, zoneId);
+      await locationApi.createOverride(seg.from, seg.to, target);
       loadTimeline();
     } catch (err) {
       Alert.alert("Couldn't correct", err instanceof Error ? err.message : String(err));
@@ -253,18 +253,20 @@ export default function LocationScreen() {
   const renderSegment = ({ item, index }: { item: TimelineSegment; index: number }) => {
     const prev = segments[index - 1];
     const showDay = !prev || dayLabel(prev.from) !== dayLabel(item.from);
+    const isZone = item.kind === "zone";
     const untagged = item.kind === "untagged";
+    const prefix = item.kind === "transit" ? "🚗 " : untagged ? "❓ " : `${(item.emoji ?? "📍").trim()} `;
     return (
       <View>
         {showDay ? <Text style={styles.dayHeader}>{dayLabel(item.from)}</Text> : null}
         <Pressable
           onPress={() => setCorrecting(item)}
-          style={({ pressed }) => [styles.segRow, untagged && styles.segRowUntagged, pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [styles.segRow, !isZone && styles.segRowUntagged, pressed && { opacity: 0.6 }]}
         >
-          <View style={[styles.segBar, { backgroundColor: untagged ? colors.border : colors.accent }]} />
+          <View style={[styles.segBar, { backgroundColor: isZone ? colors.accent : colors.border }]} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.segLabel, untagged && styles.segLabelUntagged]}>
-              {untagged ? "❓ " : `${(item.emoji ?? "📍").trim()} `}
+            <Text style={[styles.segLabel, !isZone && styles.segLabelUntagged]}>
+              {prefix}
               {item.label}
               {item.corrected ? <Text style={styles.correctedMark}>  ✎</Text> : null}
             </Text>
@@ -380,7 +382,7 @@ export default function LocationScreen() {
               {zones.map((z, idx) => (
                 <Pressable
                   key={z.id}
-                  onPress={() => correctSegment(z.id)}
+                  onPress={() => correctSegment({ zone_id: z.id })}
                   style={({ pressed }) => [styles.pickRow, idx === 0 && { borderTopWidth: 0 }, pressed && { opacity: 0.6 }]}
                 >
                   <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
@@ -388,7 +390,14 @@ export default function LocationScreen() {
                 </Pressable>
               ))}
               <Pressable
-                onPress={() => correctSegment(null)}
+                onPress={() => correctSegment({ kind: "transit" })}
+                style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.zoneEmoji}>🚗</Text>
+                <Text style={[styles.pickLabel, { color: colors.textDim }]}>In transit</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => correctSegment({ kind: "unknown" })}
                 style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.6 }]}
               >
                 <Text style={styles.zoneEmoji}>❓</Text>

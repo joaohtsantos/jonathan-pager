@@ -57,6 +57,7 @@ export type TimelineSegment = {
   city?: string | null;
   lat?: number | null;
   lon?: number | null;
+  corrected?: boolean;
 };
 
 // ============================================================================
@@ -108,6 +109,12 @@ export const locationApi = {
       `/location/timeline?${qs.toString()}`
     );
   },
+  // Retcon a time span to a zone (zoneId) or to Unknown (zoneId = null).
+  createOverride: (from: string, to: string, zoneId: string | null) =>
+    apiFetch<{ id: string }>("/location/overrides", {
+      method: "POST",
+      body: JSON.stringify({ from, to, zone_id: zoneId }),
+    }),
 };
 
 // ============================================================================

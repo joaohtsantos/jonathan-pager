@@ -75,6 +75,7 @@ export default function LocationScreen() {
 
   const [editing, setEditing] = useState<EditingZone | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Zone | null>(null);
+  const [correcting, setCorrecting] = useState<TimelineSegment | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const [segments, setSegments] = useState<TimelineSegment[]>([]);
@@ -141,6 +142,18 @@ export default function LocationScreen() {
       lon: typeof seg.lon === "number" ? seg.lon : undefined,
       radius: 100,
     });
+  };
+
+  const correctSegment = async (zoneId: string | null) => {
+    const seg = correcting;
+    if (!seg) return;
+    setCorrecting(null);
+    try {
+      await locationApi.createOverride(seg.from, seg.to, zoneId);
+      loadTimeline();
+    } catch (err) {
+      Alert.alert("Couldn't correct", err instanceof Error ? err.message : String(err));
+    }
   };
 
   const submitZone = async () => {
@@ -244,12 +257,16 @@ export default function LocationScreen() {
     return (
       <View>
         {showDay ? <Text style={styles.dayHeader}>{dayLabel(item.from)}</Text> : null}
-        <View style={[styles.segRow, untagged && styles.segRowUntagged]}>
+        <Pressable
+          onPress={() => setCorrecting(item)}
+          style={({ pressed }) => [styles.segRow, untagged && styles.segRowUntagged, pressed && { opacity: 0.6 }]}
+        >
           <View style={[styles.segBar, { backgroundColor: untagged ? colors.border : colors.accent }]} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.segLabel, untagged && styles.segLabelUntagged]}>
               {untagged ? "❓ " : `${(item.emoji ?? "📍").trim()} `}
               {item.label}
+              {item.corrected ? <Text style={styles.correctedMark}>  ✎</Text> : null}
             </Text>
             <Text style={styles.segTime}>
               {clockLabel(item.from)} → {item.ongoing ? "now" : clockLabel(item.to)}
@@ -264,7 +281,7 @@ export default function LocationScreen() {
           <Text style={[styles.segDuration, item.ongoing && { color: colors.accent }]}>
             {formatDuration(item.duration_ms)}
           </Text>
-        </View>
+        </Pressable>
       </View>
     );
   };
@@ -342,6 +359,44 @@ export default function LocationScreen() {
                   <Text style={styles.deleteText}>DELETE ZONE</Text>
                 </Pressable>
               ) : null}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* CORRECT SEGMENT MODAL */}
+      <Modal visible={correcting !== null} transparent animationType="fade" onRequestClose={() => setCorrecting(null)} statusBarTranslucent>
+        <Pressable style={styles.backdrop} onPress={() => setCorrecting(null)}>
+          <Pressable style={styles.editCard} onPress={() => {}}>
+            <View style={styles.cardLeftBar} />
+            <View style={styles.editInner}>
+              <Text style={styles.editTitle}>WHERE WERE YOU?</Text>
+              {correcting ? (
+                <Text style={styles.dim}>
+                  {clockLabel(correcting.from)} → {correcting.ongoing ? "now" : clockLabel(correcting.to)} · {formatDuration(correcting.duration_ms)}
+                </Text>
+              ) : null}
+              <View style={styles.divider} />
+              {zones.map((z, idx) => (
+                <Pressable
+                  key={z.id}
+                  onPress={() => correctSegment(z.id)}
+                  style={({ pressed }) => [styles.pickRow, idx === 0 && { borderTopWidth: 0 }, pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
+                  <Text style={styles.pickLabel}>{z.name}</Text>
+                </Pressable>
+              ))}
+              <Pressable
+                onPress={() => correctSegment(null)}
+                style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.zoneEmoji}>❓</Text>
+                <Text style={[styles.pickLabel, { color: colors.textDim }]}>Unknown (untagged)</Text>
+              </Pressable>
+              <Pressable onPress={() => setCorrecting(null)} style={[styles.btn, { marginTop: spacing.md }]}>
+                <Text style={styles.cancelText}>[ CANCEL ]</Text>
+              </Pressable>
             </View>
           </Pressable>
         </Pressable>
@@ -470,7 +525,11 @@ const styles = StyleSheet.create({
   segDuration: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   gapAddBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 3, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.accent },
   gapAddText: { color: colors.accent, fontFamily: fonts.mono, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
+  correctedMark: { color: colors.accent, fontSize: 11 },
   endText: { textAlign: "center", marginVertical: spacing.lg },
+
+  pickRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm + 2, borderTopWidth: 1, borderTopColor: colors.border },
+  pickLabel: { color: colors.text, fontFamily: fonts.mono, fontSize: 13, fontWeight: "700" },
 
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
   editCard: { flexDirection: "row", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderBright, width: "100%", maxWidth: 420 },

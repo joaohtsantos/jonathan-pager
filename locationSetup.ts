@@ -122,6 +122,30 @@ type GeofenceTaskData = {
   error: TaskManager.TaskManagerError | null;
 };
 
+// On a real geofence transition, also POST a one-shot GPS fix. Geofence events
+// alone leave the server guessing the neighbourhood; a real coordinate at the
+// transition lets the backend lock the move to the exact zone + time (and the
+// new ping anchors presence even if "significant change" goes quiet afterward).
+async function postConfirmingPing(): Promise<void> {
+  try {
+    let pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+    if (!pos) pos = await Location.getLastKnownPositionAsync();
+    if (!pos) return;
+    await fetch(`${API_BASE_URL}/location/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        timestamp: new Date(pos.timestamp || Date.now()).toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.error("[geofence] confirming ping failed", err);
+  }
+}
+
 TaskManager.defineTask(GEOFENCING_TASK, async ({ data, error }: GeofenceTaskData) => {
   if (error) {
     console.error("[geofence] task error", error.message);
@@ -155,6 +179,9 @@ TaskManager.defineTask(GEOFENCING_TASK, async ({ data, error }: GeofenceTaskData
   } catch (err) {
     console.error("[geofence] post failed", err);
   }
+
+  // Anchor the transition with a real coordinate.
+  await postConfirmingPing();
 });
 
 type LocationTaskData = {

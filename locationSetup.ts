@@ -1,7 +1,14 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL, API_KEY } from "./constants";
+
+// Per-region last-forwarded state. On every app/OS relaunch, Expo re-reports the
+// initial state of EVERY region (enter the one you're in, exit each one you're
+// not) — not just real transitions. We persist the last state we forwarded per
+// region and only POST when it changes, killing the phantom burst at the source.
+const GEO_STATE_PREFIX = "pager-geo-state:";
 
 export const GEOFENCING_TASK = "pager-geofencing";
 export const BG_LOCATION_TASK = "pager-bg-location";
@@ -99,6 +106,19 @@ TaskManager.defineTask(GEOFENCING_TASK, async ({ data, error }: GeofenceTaskData
   }
   const { eventType, region } = data;
   const type = eventType === Location.GeofencingEventType.Enter ? "enter" : "exit";
+
+  // Suppress non-transitions (the relaunch initial-state burst): only forward
+  // when this region's state actually changed since we last reported it.
+  const stateKey = `${GEO_STATE_PREFIX}${region.identifier}`;
+  try {
+    const last = await AsyncStorage.getItem(stateKey);
+    if (last === type) return;
+    await AsyncStorage.setItem(stateKey, type);
+  } catch (err) {
+    console.error("[geofence] state read/write failed", err);
+    // fall through and forward anyway — the server guard is the backstop
+  }
+
   try {
     await fetch(`${API_BASE_URL}/location/event`, {
       method: "POST",

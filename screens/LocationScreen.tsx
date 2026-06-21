@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,11 +15,10 @@ import * as Location from "expo-location";
 import { Feather } from "@expo/vector-icons";
 import { colors, fonts, spacing } from "../theme";
 import { useLocation } from "../locationContext";
-import { locationApi, type HistoryInterval, type Zone } from "../locationSetup";
+import { locationApi, type TimelineSegment, type Zone } from "../locationSetup";
 import ConfirmModal from "../components/ConfirmModal";
 
 type EditingZone = Partial<Omit<Zone, "id">> & { id?: string };
-type HistoryRange = "24h" | "7d" | "30d";
 
 function formatSince(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -33,34 +33,30 @@ function formatSince(iso: string | null | undefined): string {
   return `${days}d ago`;
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms === null || Number.isNaN(ms)) return "ongoing";
+function formatDuration(ms: number): string {
   const totalMin = Math.max(0, Math.round(ms / 60000));
   if (totalMin < 60) return `${totalMin}m`;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h < 24) return `${h}h ${m}m`;
+  if (h < 24) return `${h}h${m > 0 ? ` ${m}m` : ""}`;
   const d = Math.floor(h / 24);
   return `${d}d ${h % 24}h`;
 }
 
 const SHORT_WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function formatRangeLabel(iso: string): string {
+function clockLabel(iso: string): string {
   const d = new Date(iso);
-  const wd = SHORT_WD[d.getDay()];
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${wd} ${hh}:${mm}`;
+  return `${hh}:${mm}`;
+}
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  return `${SHORT_WD[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
 }
 
-function rangeStartISO(range: HistoryRange): string {
-  const now = new Date();
-  if (range === "24h") now.setDate(now.getDate() - 1);
-  else if (range === "7d") now.setDate(now.getDate() - 7);
-  else now.setDate(now.getDate() - 30);
-  return now.toISOString();
-}
+const PAGE_SIZE = 30;
 
 export default function LocationScreen() {
   const {
@@ -81,31 +77,46 @@ export default function LocationScreen() {
   const [pendingDelete, setPendingDelete] = useState<Zone | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [historyRange, setHistoryRange] = useState<HistoryRange>("7d");
-  const [history, setHistory] = useState<HistoryInterval[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [segments, setSegments] = useState<TimelineSegment[]>([]);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadHistory = async (range: HistoryRange) => {
-    setHistoryLoading(true);
-    setHistoryError(null);
+  // Load the newest page (reset) or, with a cursor, append the next older page.
+  const loadTimeline = useCallback(async (before?: string) => {
+    if (before) setLoadingMore(true);
+    else setInitialLoading(true);
+    setTimelineError(null);
     try {
-      const { intervals } = await locationApi.history(rangeStartISO(range));
-      setHistory(intervals.slice().reverse());
+      const res = await locationApi.timeline(before, PAGE_SIZE);
+      const desc = res.segments.slice().reverse(); // newest first
+      setSegments(prev => {
+        if (!before) return desc;
+        const seen = new Set(prev.map(s => `${s.from}-${s.to}`));
+        return [...prev, ...desc.filter(s => !seen.has(`${s.from}-${s.to}`))];
+      });
+      setNextBefore(res.next_before);
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : String(err));
+      setTimelineError(err instanceof Error ? err.message : String(err));
     } finally {
-      setHistoryLoading(false);
+      setInitialLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadHistory(historyRange);
-  }, [historyRange]);
+    loadTimeline();
+  }, [loadTimeline]);
+
+  const loadMore = () => {
+    if (loadingMore || initialLoading || !nextBefore) return;
+    loadTimeline(nextBefore);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refreshZones(), refreshCurrent(), loadHistory(historyRange)]);
+    await Promise.all([refreshZones(), refreshCurrent(), loadTimeline()]);
     setRefreshing(false);
   };
 
@@ -122,6 +133,16 @@ export default function LocationScreen() {
     }
   };
 
+  const addZoneFromGap = (seg: TimelineSegment) => {
+    setEditing({
+      name: seg.neighborhood ?? seg.city ?? "",
+      emoji: "📍",
+      lat: typeof seg.lat === "number" ? seg.lat : undefined,
+      lon: typeof seg.lon === "number" ? seg.lon : undefined,
+      radius: 100,
+    });
+  };
+
   const submitZone = async () => {
     if (!editing) return;
     const { name, emoji, lat, lon, radius, id } = editing;
@@ -130,12 +151,10 @@ export default function LocationScreen() {
       return;
     }
     try {
-      if (id) {
-        await updateZone(id, { name, emoji: emoji ?? null, lat, lon, radius });
-      } else {
-        await createZone({ name, emoji: emoji ?? null, lat, lon, radius });
-      }
+      if (id) await updateZone(id, { name, emoji: emoji ?? null, lat, lon, radius });
+      else await createZone({ name, emoji: emoji ?? null, lat, lon, radius });
       setEditing(null);
+      loadTimeline(); // a new zone reshapes the timeline
     } catch (err) {
       Alert.alert("Save failed", err instanceof Error ? err.message : String(err));
     }
@@ -151,195 +170,151 @@ export default function LocationScreen() {
     return parts.join(", ");
   }, [current]);
 
+  const ListHeader = (
+    <View>
+      {/* CURRENT */}
+      <View style={styles.block}>
+        <View style={styles.blockHeaderRow}>
+          <Text style={styles.blockHeader}>CURRENT</Text>
+          <Pressable onPress={refreshCurrent} hitSlop={8}>
+            <Feather name="refresh-cw" size={12} color={colors.textFaint} />
+          </Pressable>
+        </View>
+        <View style={styles.blockDivider} />
+        <Text style={styles.currentText}>{currentLine}</Text>
+        {current?.last_ping ? (
+          <Text style={styles.dim}>last ping {formatSince(current.last_ping)}</Text>
+        ) : null}
+        {currentError ? <Text style={styles.errorText}>ERROR: {currentError}</Text> : null}
+      </View>
+
+      {/* ZONES */}
+      <View style={styles.block}>
+        <View style={styles.blockHeaderRow}>
+          <Text style={styles.blockHeader}>ZONES</Text>
+          <Pressable onPress={() => setEditing({ radius: 100 })} hitSlop={8} style={styles.addBtn}>
+            <Feather name="plus" size={12} color={colors.accent} />
+            <Text style={styles.addBtnText}>ADD</Text>
+          </Pressable>
+        </View>
+        <View style={styles.blockDivider} />
+        {zonesError ? <Text style={styles.errorText}>ERROR: {zonesError}</Text> : null}
+        {zonesLoading && zones.length === 0 ? (
+          <Text style={styles.dim}>Loading…</Text>
+        ) : zones.length === 0 ? (
+          <Text style={styles.dim}>No zones yet. Add one above.</Text>
+        ) : (
+          zones.map((z, idx) => (
+            <Pressable
+              key={z.id}
+              onPress={() => setEditing(z)}
+              onLongPress={() => setPendingDelete(z)}
+              style={({ pressed }) => [styles.zoneRow, idx === 0 && { borderTopWidth: 0 }, pressed && { opacity: 0.6 }]}
+            >
+              <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.zoneName}>{z.name}</Text>
+                <Text style={styles.zoneCoords}>
+                  {z.lat.toFixed(4)}, {z.lon.toFixed(4)} · r={Math.round(z.radius)}m
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={14} color={colors.textFaint} />
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      {/* TIMELINE header */}
+      <View style={styles.timelineHeaderRow}>
+        <Text style={styles.blockHeader}>TIMELINE</Text>
+        <Text style={styles.dim}>most recent first</Text>
+      </View>
+      {timelineError ? <Text style={styles.errorText}>ERROR: {timelineError}</Text> : null}
+      {initialLoading ? <Text style={styles.dim}>Loading…</Text> : null}
+      {!initialLoading && segments.length === 0 ? (
+        <Text style={styles.dim}>No history yet.</Text>
+      ) : null}
+    </View>
+  );
+
+  const renderSegment = ({ item, index }: { item: TimelineSegment; index: number }) => {
+    const prev = segments[index - 1];
+    const showDay = !prev || dayLabel(prev.from) !== dayLabel(item.from);
+    const untagged = item.kind === "untagged";
+    return (
+      <View>
+        {showDay ? <Text style={styles.dayHeader}>{dayLabel(item.from)}</Text> : null}
+        <View style={[styles.segRow, untagged && styles.segRowUntagged]}>
+          <View style={[styles.segBar, { backgroundColor: untagged ? colors.border : colors.accent }]} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.segLabel, untagged && styles.segLabelUntagged]}>
+              {untagged ? "❓ " : `${(item.emoji ?? "📍").trim()} `}
+              {item.label}
+            </Text>
+            <Text style={styles.segTime}>
+              {clockLabel(item.from)} → {item.ongoing ? "now" : clockLabel(item.to)}
+            </Text>
+          </View>
+          {untagged && typeof item.lat === "number" && typeof item.lon === "number" ? (
+            <Pressable onPress={() => addZoneFromGap(item)} hitSlop={8} style={styles.gapAddBtn}>
+              <Feather name="plus" size={11} color={colors.accent} />
+              <Text style={styles.gapAddText}>ADD</Text>
+            </Pressable>
+          ) : null}
+          <Text style={[styles.segDuration, item.ongoing && { color: colors.accent }]}>
+            {formatDuration(item.duration_ms)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerLeftBar} />
         <View style={styles.headerInner}>
           <Text style={styles.headerTitle}>LOCATION</Text>
           <View style={styles.headerDivider} />
           <Text style={styles.headerStatusLine}>
-            {tracking ? (
-              <Text style={{ color: colors.accent }}>● TRACKING</Text>
-            ) : (
-              <Text style={styles.dim}>○ IDLE</Text>
-            )}
+            {tracking ? <Text style={{ color: colors.accent }}>● TRACKING</Text> : <Text style={styles.dim}>○ IDLE</Text>}
             <Text style={styles.dim}> · </Text>
             {zones.length} {zones.length === 1 ? "zone" : "zones"}
           </Text>
         </View>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={segments}
+        keyExtractor={(s, i) => `${s.from}-${s.to}-${i}`}
+        renderItem={renderSegment}
+        ListHeaderComponent={ListHeader}
         contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.accent}
-          />
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.6}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        ListFooterComponent={
+          loadingMore ? (
+            <ActivityIndicator color={colors.accent} style={{ marginVertical: spacing.lg }} />
+          ) : segments.length > 0 && !nextBefore ? (
+            <Text style={[styles.dim, styles.endText]}>— start of history —</Text>
+          ) : null
         }
-      >
-        {/* CURRENT */}
-        <View style={styles.block}>
-          <View style={styles.blockHeaderRow}>
-            <Text style={styles.blockHeader}>CURRENT</Text>
-            <Pressable onPress={refreshCurrent} hitSlop={8}>
-              <Feather name="refresh-cw" size={12} color={colors.textFaint} />
-            </Pressable>
-          </View>
-          <View style={styles.blockDivider} />
-          <Text style={styles.currentText}>{currentLine}</Text>
-          {current?.last_ping ? (
-            <Text style={styles.dim}>last ping {formatSince(current.last_ping)}</Text>
-          ) : null}
-          {currentError ? <Text style={styles.errorText}>ERROR: {currentError}</Text> : null}
-        </View>
-
-        {/* ZONES */}
-        <View style={styles.block}>
-          <View style={styles.blockHeaderRow}>
-            <Text style={styles.blockHeader}>ZONES</Text>
-            <Pressable
-              onPress={() => setEditing({ radius: 100 })}
-              hitSlop={8}
-              style={styles.addBtn}
-            >
-              <Feather name="plus" size={12} color={colors.accent} />
-              <Text style={styles.addBtnText}>ADD</Text>
-            </Pressable>
-          </View>
-          <View style={styles.blockDivider} />
-
-          {zonesError ? <Text style={styles.errorText}>ERROR: {zonesError}</Text> : null}
-          {zonesLoading && zones.length === 0 ? (
-            <Text style={styles.dim}>Loading…</Text>
-          ) : zones.length === 0 ? (
-            <Text style={styles.dim}>No zones yet. Add one above.</Text>
-          ) : (
-            zones.map((z, idx) => (
-              <Pressable
-                key={z.id}
-                onPress={() => setEditing(z)}
-                onLongPress={() => setPendingDelete(z)}
-                style={({ pressed }) => [
-                  styles.zoneRow,
-                  idx === 0 && { borderTopWidth: 0 },
-                  pressed && { opacity: 0.6 },
-                ]}
-              >
-                <Text style={styles.zoneEmoji}>{z.emoji ?? "📍"}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.zoneName}>{z.name}</Text>
-                  <Text style={styles.zoneCoords}>
-                    {z.lat.toFixed(4)}, {z.lon.toFixed(4)} · r={Math.round(z.radius)}m
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={14} color={colors.textFaint} />
-              </Pressable>
-            ))
-          )}
-        </View>
-
-        {/* HISTORY */}
-        <View style={styles.block}>
-          <View style={styles.blockHeaderRow}>
-            <Text style={styles.blockHeader}>HISTORY</Text>
-            <View style={styles.rangeRow}>
-              {(["24h", "7d", "30d"] as HistoryRange[]).map(r => (
-                <Pressable
-                  key={r}
-                  onPress={() => setHistoryRange(r)}
-                  style={[styles.rangeBtn, historyRange === r && styles.rangeBtnActive]}
-                >
-                  <Text style={[styles.rangeBtnText, historyRange === r && styles.rangeBtnTextActive]}>
-                    {r}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-          <View style={styles.blockDivider} />
-
-          {historyError ? <Text style={styles.errorText}>ERROR: {historyError}</Text> : null}
-          {historyLoading && history.length === 0 ? (
-            <Text style={styles.dim}>Loading…</Text>
-          ) : history.length === 0 ? (
-            <Text style={styles.dim}>No zone visits in this range.</Text>
-          ) : (
-            history.map((iv, idx) => (
-              <View
-                key={`${iv.zone_id}-${iv.from}-${idx}`}
-                style={[styles.historyRow, idx === 0 && { borderTopWidth: 0 }]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyZone}>
-                    {iv.zone_name ?? "(deleted zone)"}
-                  </Text>
-                  <Text style={styles.historyRange}>
-                    {formatRangeLabel(iv.from)}{iv.to ? ` → ${formatRangeLabel(iv.to)}` : " → now"}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.historyDuration,
-                    iv.to === null && { color: colors.accent },
-                  ]}
-                >
-                  {formatDuration(iv.duration_ms)}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-
-      </ScrollView>
+      />
 
       {/* EDIT/CREATE MODAL */}
-      <Modal
-        visible={editing !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditing(null)}
-        statusBarTranslucent
-      >
+      <Modal visible={editing !== null} transparent animationType="fade" onRequestClose={() => setEditing(null)} statusBarTranslucent>
         <Pressable style={styles.backdrop} onPress={() => setEditing(null)}>
           <Pressable style={styles.editCard} onPress={() => {}}>
             <View style={styles.cardLeftBar} />
             <View style={styles.editInner}>
               <Text style={styles.editTitle}>{editing?.id ? "EDIT ZONE" : "NEW ZONE"}</Text>
               <View style={styles.divider} />
-
-              <Field
-                label="NAME"
-                value={editing?.name ?? ""}
-                onChange={v => setEditing(p => ({ ...(p ?? {}), name: v }))}
-              />
-              <Field
-                label="EMOJI"
-                value={editing?.emoji ?? ""}
-                onChange={v => setEditing(p => ({ ...(p ?? {}), emoji: v }))}
-                placeholder="🏠"
-              />
-              <Field
-                label="LAT"
-                value={editing?.lat?.toString() ?? ""}
-                onChange={v => setEditing(p => ({ ...(p ?? {}), lat: parseFloat(v) }))}
-                keyboardType="numbers-and-punctuation"
-              />
-              <Field
-                label="LON"
-                value={editing?.lon?.toString() ?? ""}
-                onChange={v => setEditing(p => ({ ...(p ?? {}), lon: parseFloat(v) }))}
-                keyboardType="numbers-and-punctuation"
-              />
-              <Field
-                label="RADIUS (m)"
-                value={editing?.radius?.toString() ?? ""}
-                onChange={v => setEditing(p => ({ ...(p ?? {}), radius: parseFloat(v) }))}
-                keyboardType="number-pad"
-              />
+              <Field label="NAME" value={editing?.name ?? ""} onChange={v => setEditing(p => ({ ...(p ?? {}), name: v }))} />
+              <Field label="EMOJI" value={editing?.emoji ?? ""} onChange={v => setEditing(p => ({ ...(p ?? {}), emoji: v }))} placeholder="🏠" />
+              <Field label="LAT" value={editing?.lat?.toString() ?? ""} onChange={v => setEditing(p => ({ ...(p ?? {}), lat: parseFloat(v) }))} keyboardType="numbers-and-punctuation" />
+              <Field label="LON" value={editing?.lon?.toString() ?? ""} onChange={v => setEditing(p => ({ ...(p ?? {}), lon: parseFloat(v) }))} keyboardType="numbers-and-punctuation" />
+              <Field label="RADIUS (m)" value={editing?.radius?.toString() ?? ""} onChange={v => setEditing(p => ({ ...(p ?? {}), radius: parseFloat(v) }))} keyboardType="number-pad" />
 
               <Pressable onPress={useCurrentCoords} style={styles.useHere}>
                 <Feather name="crosshair" size={12} color={colors.accent} />
@@ -384,8 +359,10 @@ export default function LocationScreen() {
           setPendingDelete(null);
           setEditing(null);
           if (z) {
-            try { await deleteZone(z.id); }
-            catch (err) {
+            try {
+              await deleteZone(z.id);
+              loadTimeline();
+            } catch (err) {
               Alert.alert("Delete failed", err instanceof Error ? err.message : String(err));
             }
           }
@@ -473,16 +450,27 @@ const styles = StyleSheet.create({
   zoneName: { color: colors.text, fontFamily: fonts.mono, fontSize: 13, fontWeight: "700" },
   zoneCoords: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
 
-  rangeRow: { flexDirection: "row", gap: 4 },
-  rangeBtn: { paddingVertical: 3, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.borderBright },
-  rangeBtnActive: { borderColor: colors.accent },
-  rangeBtnText: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
-  rangeBtnTextActive: { color: colors.accent },
+  timelineHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
 
-  historyRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
-  historyZone: { color: colors.text, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700" },
-  historyRange: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
-  historyDuration: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  dayHeader: {
+    color: colors.textDim,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs ?? 4,
+  },
+  segRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.sm, marginTop: 2 },
+  segRowUntagged: { backgroundColor: "transparent" },
+  segBar: { width: 3, alignSelf: "stretch" },
+  segLabel: { color: colors.text, fontFamily: fonts.mono, fontSize: 13, fontWeight: "700" },
+  segLabelUntagged: { color: colors.textDim, fontWeight: "400" },
+  segTime: { color: colors.textFaint, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
+  segDuration: { color: colors.textDim, fontFamily: fonts.mono, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  gapAddBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 3, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.accent },
+  gapAddText: { color: colors.accent, fontFamily: fonts.mono, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
+  endText: { textAlign: "center", marginVertical: spacing.lg },
 
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
   editCard: { flexDirection: "row", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderBright, width: "100%", maxWidth: 420 },

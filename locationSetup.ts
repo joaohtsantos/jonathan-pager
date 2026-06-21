@@ -44,6 +44,21 @@ export type HistoryInterval = {
   duration_ms: number | null;
 };
 
+export type TimelineSegment = {
+  kind: "zone" | "untagged";
+  zone_id: string | null;
+  label: string;
+  emoji: string | null;
+  from: string;
+  to: string;
+  duration_ms: number;
+  ongoing: boolean;
+  neighborhood?: string | null;
+  city?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+};
+
 // ============================================================================
 // API client
 // ============================================================================
@@ -83,6 +98,14 @@ export const locationApi = {
     const q = qs.toString();
     return apiFetch<{ intervals: HistoryInterval[] }>(
       `/location/history${q ? `?${q}` : ""}`
+    );
+  },
+  timeline: (before?: string, limit = 30) => {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    if (before) qs.set("before", before);
+    return apiFetch<{ segments: TimelineSegment[]; next_before: string | null }>(
+      `/location/timeline?${qs.toString()}`
     );
   },
 };

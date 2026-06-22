@@ -6,7 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import PushListScreen from "./screens/PushListScreen";
 import PushDetailScreen from "./screens/PushDetailScreen";
-import RequestsScreen from "./screens/RequestsScreen";
+import AgentMonitorScreen from "./screens/AgentMonitorScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import LocationScreen from "./screens/LocationScreen";
 import type { PushStackParamList } from "./screens/PushListScreen";
@@ -90,11 +90,12 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Requests"
-        component={RequestsScreen}
+        name="AgentMonitor"
+        component={AgentMonitorScreen}
         options={{
+          title: "Agent Monitor",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="check-square" size={size} color={color} />
+            <Feather name="activity" size={size} color={color} />
           ),
         }}
       />

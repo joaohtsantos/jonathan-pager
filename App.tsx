@@ -11,6 +11,7 @@ import SettingsScreen from "./screens/SettingsScreen";
 import LocationScreen from "./screens/LocationScreen";
 import type { PushStackParamList } from "./screens/PushListScreen";
 import { TokenProvider } from "./tokenContext";
+import { navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
 import { colors, fonts } from "./theme";
@@ -126,7 +127,7 @@ export default function App() {
       <ToastProvider>
         <TokenProvider>
           <LocationProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               <StatusBar style="light" />
               <MainTabs />
             </NavigationContainer>

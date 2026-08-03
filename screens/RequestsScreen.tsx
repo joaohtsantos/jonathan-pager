@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   AppState,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,13 +18,51 @@ import { colors, fonts, spacing } from "../theme";
 interface PagerRequest {
   id: string;
   type: string;
-  email_subject: string;
-  email_sender: string;
+  email_subject: string | null;
+  email_sender: string | null;
   summary: string;
   proposed_action: string;
   priority: "low" | "medium" | "high";
   status: string;
   created_at: string;
+  payload?: string | null;
+}
+
+interface RequestAction {
+  label: string;
+  url: string;
+}
+
+// Generic (non-email) request types render without the FROM/PROPOSED email
+// chrome and with DONE/DISMISS button labels instead of APPROVE/REJECT.
+const GENERIC_TYPES = new Set(["action_card", "mark_read"]);
+
+// The API stores payload as a JSON string column and returns it raw.
+// Only https action URLs are honored — the backend composes them, but the
+// app is the last line of defense before Linking.openURL.
+function parsePayload(raw: unknown): { detail?: string; actions: RequestAction[] } {
+  let obj: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      obj = null;
+    }
+  }
+  if (!obj || typeof obj !== "object") return { actions: [] };
+  const o = obj as { detail?: unknown; actions?: unknown };
+  const actions = Array.isArray(o.actions)
+    ? (o.actions as unknown[]).filter(
+        (a): a is RequestAction =>
+          typeof (a as RequestAction)?.label === "string" &&
+          typeof (a as RequestAction)?.url === "string" &&
+          /^https:\/\//.test((a as RequestAction).url)
+      )
+    : [];
+  return {
+    detail: typeof o.detail === "string" ? o.detail : undefined,
+    actions,
+  };
 }
 
 const PRIORITY_CONFIG: Record<
@@ -209,6 +248,9 @@ export default function RequestsScreen() {
           const priority = PRIORITY_CONFIG[item.priority] ?? PRIORITY_CONFIG.low;
           const isActioning = actioning.has(item.id);
           const isExpanded = expanded.has(item.id);
+          const isGeneric = GENERIC_TYPES.has(item.type);
+          const { detail, actions } = parsePayload(item.payload);
+          const headline = item.email_subject ?? item.summary;
           return (
             <View style={[styles.card, { borderLeftColor: priority.color }]}>
               {/* TOP ROW */}
@@ -225,14 +267,16 @@ export default function RequestsScreen() {
               {/* CONTENT — tap to expand/collapse */}
               <Pressable onPress={() => toggleExpanded(item.id)}>
                 <Text style={styles.subject} numberOfLines={isExpanded ? undefined : 2}>
-                  {item.email_subject}
+                  {headline}
                 </Text>
-                <Text style={styles.sender} numberOfLines={isExpanded ? undefined : 1}>
-                  <Text style={styles.senderLabel}>FROM  </Text>
-                  {item.email_sender}
-                </Text>
+                {item.email_sender ? (
+                  <Text style={styles.sender} numberOfLines={isExpanded ? undefined : 1}>
+                    <Text style={styles.senderLabel}>FROM  </Text>
+                    {item.email_sender}
+                  </Text>
+                ) : null}
 
-                {item.summary ? (
+                {item.summary && item.summary !== headline ? (
                   <>
                     <View style={styles.innerDivider} />
                     <Text
@@ -240,6 +284,18 @@ export default function RequestsScreen() {
                       numberOfLines={isExpanded ? undefined : 4}
                     >
                       {item.summary}
+                    </Text>
+                  </>
+                ) : null}
+
+                {detail ? (
+                  <>
+                    <View style={styles.innerDivider} />
+                    <Text
+                      style={styles.summaryText}
+                      numberOfLines={isExpanded ? undefined : 6}
+                    >
+                      {detail}
                     </Text>
                   </>
                 ) : null}
@@ -318,6 +374,29 @@ export default function RequestsScreen() {
                 </View>
               </Pressable>
 
+              {/* ACTION LINKS — open externally; the write (if any) is done by João */}
+              {actions.length > 0 ? (
+                <View style={styles.actionLinks}>
+                  {actions.map((a, i) => (
+                    <Pressable
+                      key={i}
+                      style={({ pressed }) => [
+                        styles.btn,
+                        styles.linkBtn,
+                        pressed && styles.btnPressed,
+                      ]}
+                      onPress={() =>
+                        Linking.openURL(a.url).catch((e) =>
+                          console.error("Failed to open action link:", e)
+                        )
+                      }
+                    >
+                      <Text style={styles.linkBtnText}>{a.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+
               {/* ACTIONS */}
               <View style={styles.buttons}>
                 <Pressable
@@ -330,7 +409,7 @@ export default function RequestsScreen() {
                   disabled={isActioning}
                 >
                   <Text style={styles.approveBtnText}>
-                    {isActioning ? "[ ... ]" : "[  ✓  APPROVE  ]"}
+                    {isActioning ? "[ ... ]" : isGeneric ? "[  ✓  DONE  ]" : "[  ✓  APPROVE  ]"}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -343,7 +422,7 @@ export default function RequestsScreen() {
                   disabled={isActioning}
                 >
                   <Text style={styles.rejectBtnText}>
-                    {isActioning ? "[ ... ]" : "[  ✕  REJECT  ]"}
+                    {isActioning ? "[ ... ]" : isGeneric ? "[  ✕  DISMISS  ]" : "[  ✕  REJECT  ]"}
                   </Text>
                 </Pressable>
               </View>
@@ -581,6 +660,21 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
 
+  actionLinks: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  linkBtn: {
+    flex: undefined,
+    borderColor: colors.accent,
+  },
+  linkBtnText: {
+    color: colors.accent,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+  },
   buttons: {
     flexDirection: "row",
     gap: spacing.sm,

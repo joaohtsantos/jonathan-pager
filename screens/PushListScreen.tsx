@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import * as Notifications from "expo-notifications";
+import { navigateToTab } from "../navigationRef";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { API_BASE_URL, API_KEY } from "../constants";
@@ -124,7 +125,11 @@ export default function PushListScreen() {
     });
     notificationListener.current = notifSub;
 
-    const responseSub = Notifications.addNotificationResponseReceivedListener(() => {});
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as { source?: string };
+      // Email-agent pushes point at the Requests tab (that's where their cards live).
+      if (data?.source === "email-agent") navigateToTab("Requests");
+    });
 
     return () => {
       notifSub.remove();

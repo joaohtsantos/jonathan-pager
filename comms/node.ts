@@ -263,7 +263,9 @@ export class CommsNode {
       await this.save();
       return r;
     });
-    await this.setGrant(b.machine_id, true);
+    // The grant is stored locally first; if the broker is unreachable now it is
+    // re-sent by syncBroker on the next connect.
+    await this.setGrant(b.machine_id, true).catch(() => undefined);
     return rec;
   }
 

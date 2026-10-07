@@ -52,6 +52,11 @@ export async function handlePorterPush(payload: unknown): Promise<boolean> {
     const added = await store.ingestNotify(data.from, undefined, plain.notify, "push");
     const item = store.getSnapshot().inbox.find((i) => i.id === plain.notify.id && i.fromMachine === data.from);
     if (item && (added || !item.read)) await presentNotify(store, item);
+    // A question needs the comms copy too: it carries the asker's agent ID
+    // that the answer must go to. Fetch it now while we are awake.
+    if (item?.notify.ask?.length && !item.fromAgent && !node.isRunning && node.configured) {
+      await node.drain({ quietMs: 1500, maxMs: 8000 }).catch(() => undefined);
+    }
   } else if (plain.kind === "wake") {
     // Too large for a push: fetch it from the broker queue; the comms path
     // ingests and presents it.

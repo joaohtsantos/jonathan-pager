@@ -15,10 +15,18 @@ Expo / React Native mobile app — the frontend of the Pager pair. Receives push
 - `npm run android` / `npm run ios` / `npm run web`
 - Builds: configured via `eas.json` (Expo Application Services)
 
-## Screens
-- `screens/PushListScreen.tsx` — incoming push notifications
-- `screens/PushDetailScreen.tsx` — push detail view
-- `screens/RequestsScreen.tsx` — proposal request approve/reject
+## Screens (4 tabs: Agents · Inbox · Location · Machines)
+- `screens/agents/` — porter agents by machine (needs_you first, subagents nested), detail (special toggle for approvers), Graveyard
+- `screens/inbox/` — one timeline: porter notifies + pager-api pushes; questions + pending requests pinned; sender detail with mute/block
+- `screens/LocationScreen.tsx` — unchanged
+- `screens/machines/` — paired machines, pairing paste / copy identity, broker URL + service key, trusts; then `SettingsSections`
+- Legacy, reachable from Inbox: `PushListScreen` (PAGER LOG), `PushDetailScreen`, `RequestsScreen`
+- Styling primitives: `components/ui.tsx` (restyle there)
+
+## Comms / porter (Agent Monitor Mobile)
+- `comms/` — TypeScript comms node (port of `~/fun/comms`): identity in expo-secure-store, broker auth, presence for agent `app`, grants, NaCl envelopes, NDJSON stream (XHR), receipts/acks. Tests: `npm test` (Go-produced vectors in `comms/__tests__/vectors`; live interop test needs a scratch Go broker, see `interop.test.ts`).
+- `porter/` — porter contract v1 (`~/fun/comms` `docs/PORTER.md`): client, persisted store, encrypted push task (`porter/pushTask.ts`, imported in `index.ts`), local notification channels `porter-high` / `porter-default`.
+- Design notes: `~/notes/projects/pager-agent-monitor.md`.
 
 ## Wiring
 - **Backend pair:** `~/pager-api/` — `constants.ts` hardcodes:

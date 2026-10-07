@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import * as Notifications from "expo-notifications";
-import { navigateToTab } from "../navigationRef";
+import { navigateTo } from "../navigationRef";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { API_BASE_URL, API_KEY } from "../constants";
@@ -88,10 +88,8 @@ export default function PushListScreen() {
       const res = await fetch(`${API_BASE_URL}/pushes?read=false`, { headers });
       if (!res.ok) return;
       const data: Push[] = await res.json();
-      const count = data.length;
-      navigation.getParent()?.setOptions({
-        tabBarBadge: count > 0 ? count : undefined,
-      });
+      // The Inbox tab badge is owned by InboxScreen (merged count) now.
+      void data;
     } catch {
       // ignore
     }
@@ -128,7 +126,7 @@ export default function PushListScreen() {
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as { source?: string };
       // Email-agent pushes point at the Requests tab (that's where their cards live).
-      if (data?.source === "email-agent") navigateToTab("Requests");
+      if (data?.source === "email-agent") navigateTo("Inbox", "Requests");
     });
 
     return () => {

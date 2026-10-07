@@ -8,7 +8,9 @@ import { useToken } from "../tokenContext";
 import { useLocation } from "../locationContext";
 import { useToast } from "../components/Toast";
 
-export default function SettingsScreen() {
+/** The original Settings blocks (push token, location, device). Also rendered at
+ * the bottom of the Machines tab. */
+export function SettingsSections() {
   const { token, error } = useToken();
   const {
     foreground,
@@ -35,6 +37,98 @@ export default function SettingsScreen() {
   };
 
   return (
+    <>
+      {/* PUSH TOKEN */}
+      <View style={styles.block}>
+        <View style={styles.blockHeaderRow}>
+          <Text style={styles.blockHeader}>PUSH TOKEN</Text>
+          {token ? (
+            <Pressable onPress={copyToken} hitSlop={8}>
+              <View style={styles.copyBtn}>
+                <Feather name="copy" size={12} color={colors.accent} />
+                <Text style={styles.copyBtnText}>COPY</Text>
+              </View>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={styles.blockDivider} />
+
+        {error ? (
+          <Text style={styles.errorText}>ERROR: {error}</Text>
+        ) : token ? (
+          <Pressable onPress={copyToken}>
+            <Text style={styles.tokenText} selectable>
+              {token}
+            </Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.dim}>Waiting for token…</Text>
+        )}
+      </View>
+
+      {/* LOCATION — PERMISSIONS */}
+      <View style={styles.block}>
+        <Text style={styles.blockHeader}>LOCATION · PERMISSIONS</Text>
+        <View style={styles.blockDivider} />
+        <PermissionRow
+          label="FOREGROUND"
+          status={foreground}
+          onRequest={requestForeground}
+        />
+        <PermissionRow
+          label="BACKGROUND"
+          status={background}
+          onRequest={requestBackground}
+          disabled={!fgGranted}
+        />
+        {(foreground === Location.PermissionStatus.DENIED ||
+          background === Location.PermissionStatus.DENIED) && (
+          <Pressable onPress={() => Linking.openSettings()} style={styles.linkBtn}>
+            <Text style={styles.linkBtnText}>[ OPEN SYSTEM SETTINGS ]</Text>
+          </Pressable>
+        )}
+        {!fgGranted ? (
+          <Text style={styles.dim}>Foreground required to add zones via "use current location".</Text>
+        ) : null}
+      </View>
+
+      {/* LOCATION — TRACKING */}
+      {bgGranted ? (
+        <View style={styles.block}>
+          <View style={styles.blockHeaderRow}>
+            <Text style={styles.blockHeader}>LOCATION · TRACKING</Text>
+            <Pressable
+              onPress={tracking ? stopTracking : startTracking}
+              style={[styles.toggle, tracking && styles.toggleOn]}
+            >
+              <Text style={[styles.toggleText, tracking && styles.toggleTextOn]}>
+                [ {tracking ? "STOP" : "START"} ]
+              </Text>
+            </Pressable>
+          </View>
+          <View style={styles.blockDivider} />
+          <Text style={styles.dim}>
+            {tracking
+              ? "Background geofence + significant location changes active."
+              : "Press START to begin tracking. Stops after app reinstall or manual stop."}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* INFO */}
+      <View style={styles.block}>
+        <Text style={styles.blockHeader}>DEVICE</Text>
+        <View style={styles.blockDivider} />
+        <InfoRow label="PLATFORM" value={Platform.OS} />
+        <InfoRow label="APP" value={`v${version}`} />
+      </View>
+    </>
+  );
+}
+
+export default function SettingsScreen() {
+  const version = (Constants.expoConfig?.version ?? "?") as string;
+  return (
     <View style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
@@ -49,90 +143,7 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* PUSH TOKEN */}
-        <View style={styles.block}>
-          <View style={styles.blockHeaderRow}>
-            <Text style={styles.blockHeader}>PUSH TOKEN</Text>
-            {token ? (
-              <Pressable onPress={copyToken} hitSlop={8}>
-                <View style={styles.copyBtn}>
-                  <Feather name="copy" size={12} color={colors.accent} />
-                  <Text style={styles.copyBtnText}>COPY</Text>
-                </View>
-              </Pressable>
-            ) : null}
-          </View>
-          <View style={styles.blockDivider} />
-
-          {error ? (
-            <Text style={styles.errorText}>ERROR: {error}</Text>
-          ) : token ? (
-            <Pressable onPress={copyToken}>
-              <Text style={styles.tokenText} selectable>
-                {token}
-              </Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.dim}>Waiting for token…</Text>
-          )}
-        </View>
-
-        {/* LOCATION — PERMISSIONS */}
-        <View style={styles.block}>
-          <Text style={styles.blockHeader}>LOCATION · PERMISSIONS</Text>
-          <View style={styles.blockDivider} />
-          <PermissionRow
-            label="FOREGROUND"
-            status={foreground}
-            onRequest={requestForeground}
-          />
-          <PermissionRow
-            label="BACKGROUND"
-            status={background}
-            onRequest={requestBackground}
-            disabled={!fgGranted}
-          />
-          {(foreground === Location.PermissionStatus.DENIED ||
-            background === Location.PermissionStatus.DENIED) && (
-            <Pressable onPress={() => Linking.openSettings()} style={styles.linkBtn}>
-              <Text style={styles.linkBtnText}>[ OPEN SYSTEM SETTINGS ]</Text>
-            </Pressable>
-          )}
-          {!fgGranted ? (
-            <Text style={styles.dim}>Foreground required to add zones via "use current location".</Text>
-          ) : null}
-        </View>
-
-        {/* LOCATION — TRACKING */}
-        {bgGranted ? (
-          <View style={styles.block}>
-            <View style={styles.blockHeaderRow}>
-              <Text style={styles.blockHeader}>LOCATION · TRACKING</Text>
-              <Pressable
-                onPress={tracking ? stopTracking : startTracking}
-                style={[styles.toggle, tracking && styles.toggleOn]}
-              >
-                <Text style={[styles.toggleText, tracking && styles.toggleTextOn]}>
-                  [ {tracking ? "STOP" : "START"} ]
-                </Text>
-              </Pressable>
-            </View>
-            <View style={styles.blockDivider} />
-            <Text style={styles.dim}>
-              {tracking
-                ? "Background geofence + significant location changes active."
-                : "Press START to begin tracking. Stops after app reinstall or manual stop."}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* INFO */}
-        <View style={styles.block}>
-          <Text style={styles.blockHeader}>DEVICE</Text>
-          <View style={styles.blockDivider} />
-          <InfoRow label="PLATFORM" value={Platform.OS} />
-          <InfoRow label="APP" value={`v${version}`} />
-        </View>
+        <SettingsSections />
       </ScrollView>
     </View>
   );

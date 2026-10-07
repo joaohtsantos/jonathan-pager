@@ -1,50 +1,112 @@
+import { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
 import { Feather } from "@expo/vector-icons";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import PushListScreen from "./screens/PushListScreen";
 import PushDetailScreen from "./screens/PushDetailScreen";
 import RequestsScreen from "./screens/RequestsScreen";
-import SettingsScreen from "./screens/SettingsScreen";
 import LocationScreen from "./screens/LocationScreen";
-import type { PushStackParamList } from "./screens/PushListScreen";
+import AgentsScreen from "./screens/agents/AgentsScreen";
+import AgentDetailScreen from "./screens/agents/AgentDetailScreen";
+import GraveyardScreen from "./screens/agents/GraveyardScreen";
+import InboxScreen from "./screens/inbox/InboxScreen";
+import InboxItemScreen from "./screens/inbox/InboxItemScreen";
+import MachinesScreen from "./screens/machines/MachinesScreen";
+import MachineDetailScreen from "./screens/machines/MachineDetailScreen";
+import type { AgentsStackParamList, InboxStackParamList, MachinesStackParamList } from "./navigation/types";
 import { TokenProvider } from "./tokenContext";
-import { navigationRef } from "./navigationRef";
+import { navigateTo, navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
+import { PorterProvider } from "./porter/PorterProvider";
 import { colors, fonts } from "./theme";
 
 const Tab = createBottomTabNavigator();
-const PushStack = createNativeStackNavigator<PushStackParamList>();
+const AgentsStack = createNativeStackNavigator<AgentsStackParamList>();
+const InboxStack = createNativeStackNavigator<InboxStackParamList>();
+const MachinesStack = createNativeStackNavigator<MachinesStackParamList>();
 
-function NotificationsStack() {
+const stackOptions: NativeStackNavigationOptions = {
+  headerShown: false,
+  contentStyle: { backgroundColor: colors.bg },
+};
+const detailOptions = (title = ""): NativeStackNavigationOptions => ({
+  headerShown: true,
+  headerTitle: title,
+  headerStyle: { backgroundColor: colors.surface },
+  headerTintColor: colors.text,
+  headerTitleStyle: { fontFamily: fonts.mono, fontSize: 14 },
+});
+
+function AgentsTab() {
   return (
-    <PushStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.bg },
-      }}
-    >
-      <PushStack.Screen name="PushList" component={PushListScreen} />
-      <PushStack.Screen
-        name="PushDetail"
-        component={PushDetailScreen}
-        options={{
-          headerShown: true,
-          headerTitle: "",
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.text,
-        }}
-      />
-    </PushStack.Navigator>
+    <AgentsStack.Navigator screenOptions={stackOptions}>
+      <AgentsStack.Screen name="AgentsList" component={AgentsScreen} />
+      <AgentsStack.Screen name="AgentDetail" component={AgentDetailScreen} options={detailOptions("AGENT")} />
+      <AgentsStack.Screen name="Graveyard" component={GraveyardScreen} options={detailOptions("GRAVEYARD")} />
+    </AgentsStack.Navigator>
   );
+}
+
+function InboxTab() {
+  return (
+    <InboxStack.Navigator screenOptions={stackOptions}>
+      <InboxStack.Screen name="InboxList" component={InboxScreen} />
+      <InboxStack.Screen name="InboxItem" component={InboxItemScreen} options={detailOptions()} />
+      <InboxStack.Screen name="PushDetail" component={PushDetailScreen} options={detailOptions()} />
+      <InboxStack.Screen name="PushList" component={PushListScreen} />
+      <InboxStack.Screen name="Requests" component={RequestsScreen} />
+    </InboxStack.Navigator>
+  );
+}
+
+function MachinesTab() {
+  return (
+    <MachinesStack.Navigator screenOptions={stackOptions}>
+      <MachinesStack.Screen name="MachinesList" component={MachinesScreen} />
+      <MachinesStack.Screen name="MachineDetail" component={MachineDetailScreen} options={detailOptions("MACHINE")} />
+    </MachinesStack.Navigator>
+  );
+}
+
+/** Routes notification taps: porter locals → agent / inbox item; email-agent → Requests. */
+function useNotificationRouting() {
+  useEffect(() => {
+    const route = (data: Record<string, unknown> | undefined) => {
+      if (!data) return;
+      if (data.porterLocal === "1") {
+        if (data.kind === "agent" && typeof data.machine === "string" && typeof data.agent === "string") {
+          navigateTo("Agents", "AgentDetail", { machine: data.machine, agent: data.agent });
+        } else if (data.kind === "notify" && typeof data.machine === "string" && typeof data.id === "string") {
+          navigateTo("Inbox", "InboxItem", { machine: data.machine, id: data.id });
+        }
+      } else if (data.source === "email-agent") {
+        navigateTo("Inbox", "Requests");
+      } else {
+        navigateTo("Inbox", "InboxList");
+      }
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener((r) =>
+      route(r.notification.request.content.data as Record<string, unknown>)
+    );
+    // Cold start from a tap.
+    Notifications.getLastNotificationResponseAsync()
+      .then((r) => {
+        if (r) setTimeout(() => route(r.notification.request.content.data as Record<string, unknown>), 300);
+      })
+      .catch(() => undefined);
+    return () => sub.remove();
+  }, []);
 }
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
   const barHeight = 56 + insets.bottom;
+  useNotificationRouting();
 
   return (
     <Tab.Navigator
@@ -72,12 +134,17 @@ function MainTabs() {
       }}
     >
       <Tab.Screen
-        name="Notifications"
-        component={NotificationsStack}
+        name="Agents"
+        component={AgentsTab}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="bell" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <Feather name="cpu" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Inbox"
+        component={InboxTab}
+        options={{
+          tabBarIcon: ({ color, size }) => <Feather name="bell" size={size} color={color} />,
           tabBarBadgeStyle: {
             backgroundColor: "transparent",
             color: colors.accent,
@@ -91,30 +158,17 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Requests"
-        component={RequestsScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="check-square" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
         name="Location"
         component={LocationScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="map-pin" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <Feather name="map-pin" size={size} color={color} />,
         }}
       />
       <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
+        name="Machines"
+        component={MachinesTab}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="settings" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <Feather name="server" size={size} color={color} />,
         }}
       />
     </Tab.Navigator>
@@ -126,12 +180,14 @@ export default function App() {
     <SafeAreaProvider>
       <ToastProvider>
         <TokenProvider>
-          <LocationProvider>
-            <NavigationContainer ref={navigationRef}>
-              <StatusBar style="light" />
-              <MainTabs />
-            </NavigationContainer>
-          </LocationProvider>
+          <PorterProvider>
+            <LocationProvider>
+              <NavigationContainer ref={navigationRef}>
+                <StatusBar style="light" />
+                <MainTabs />
+              </NavigationContainer>
+            </LocationProvider>
+          </PorterProvider>
         </TokenProvider>
       </ToastProvider>
     </SafeAreaProvider>

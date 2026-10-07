@@ -1,5 +1,9 @@
 import { registerRootComponent } from 'expo';
 
+// Defines the encrypted porter push task at module scope so a headless launch
+// (data-only FCM message while the app is killed) finds it.
+import './porter/pushTask';
+
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

@@ -95,13 +95,20 @@ describe.skipIf(!BROKER || !CLI)("porter v1 interop with Go", () => {
     });
     expect(m.subscribed?.approver).toBe(true);
     expect(m.subscribed?.topics).toContain("agents");
+    await until(() => store.getSnapshot().machines[peer.machine_id]?.status?.host);
+
+    // Plain notification.
+    go("porter", "notify", "--to", "phone", "--title", "Deploy finished", "--body", "it ✓", "--reason", "interop test");
+    const n = await until(() => store.getSnapshot().inbox.find((i) => i.notify.title === "Deploy finished"));
+    expect(n.notify.reason).toBe("interop test");
+    expect(n.fromMachine).toBe(peer.machine_id);
 
     // Agent lifecycle through the real porter event CLI.
     const sid = `itsess-${Date.now()}`;
     go("porter", "event", "--agent", sid, "--kind", "start", "--title", "it-agent");
     go("porter", "event", "--agent", sid, "--kind", "prompt");
     await until(() => store.getSnapshot().machines[peer.machine_id]?.agents[sid]?.status === "running");
-    go("porter", "event", "--agent", sid, "--kind", "needs", "--text", "Bash: npm test");
+    go("porter", "event", "--agent", sid, "--kind", "needs", "--needs-kind", "permission", "--needs-text", "Bash: npm test");
     const a = await until(() => {
       const x = store.getSnapshot().machines[peer.machine_id]?.agents[sid];
       return x?.status === "needs_you" ? x : undefined;

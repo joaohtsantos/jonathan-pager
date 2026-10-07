@@ -43,8 +43,9 @@ describe.skipIf(!BROKER || !CLI)("interop with Go comms", () => {
     const peer = await phone.pair(JSON.stringify(macBundle));
     const bundlePath = join(tmpdir(), `phone-bundle-${Date.now()}.json`);
     writeFileSync(bundlePath, JSON.stringify(phone.identityBundle("phone")));
-    go("pair", "--file", bundlePath, "--alias", "phone");
-    go("grant", "phone");
+    const alias = `phone${Date.now() % 1_000_000}`; // unique per run on a reused scratch node
+    go("pair", "--file", bundlePath, "--alias", alias);
+    go("grant", alias);
     go("open", "bot", "--persistent", "--global", "--harness", "service");
 
     const received: InboundMessage[] = [];
@@ -72,7 +73,7 @@ describe.skipIf(!BROKER || !CLI)("interop with Go comms", () => {
     await until(async () => ["received", "handed_off"].includes((await phone.sentState(id)) ?? ""));
 
     // Go agent → phone (live stream).
-    const sent = goJSON("post", "--from", "bot", "--to", "phone:app", "hello phone ✓");
+    const sent = goJSON("post", "--from", "bot", "--to", `${alias}:app`, "hello phone ✓");
     const got = (await until(() => received.find((m) => m.id === sent.id)))!;
     expect(got.body).toBe("hello phone ✓");
     expect(got.fromAgent).toBe(agentId);
@@ -81,7 +82,7 @@ describe.skipIf(!BROKER || !CLI)("interop with Go comms", () => {
 
     // Offline queue → drain on resume.
     await phone.stop();
-    const later = goJSON("post", "--from", "bot", "--to", "phone:app", "while you were away");
+    const later = goJSON("post", "--from", "bot", "--to", `${alias}:app`, "while you were away");
     await until(() => ["forwarded", "queued"].includes(goJSON("status", later.id).state) || true);
     await sleep(1500);
     await phone.drain({ quietMs: 1500, maxMs: 15000 });

@@ -23,7 +23,7 @@ export interface MachineState {
 export interface InboxItem {
   id: string;
   fromMachine: string;
-  /** comms agent id of the sender, when it arrived over comms (answers go there). */
+  /** comms agent id of the carrier (`<machine>:porter`), when it arrived over comms; answers go there. */
   fromAgent?: string;
   notify: Notify;
   receivedAt: number;
@@ -51,9 +51,14 @@ const INBOX_MAX = 500;
 export const machineKey = (machineId: string) => `m:${machineId}`;
 export const agentKey = (machineId: string, agent: string) => `a:${machineId}/${agent}`;
 
-/** Agent-level identity of a notify's sender: harness session > title > comms agent. */
+/**
+ * Agent-level identity of a notify's sender. Notifies are carried by
+ * `<machine>:porter`, so the comms sender is porter; the originating agent is
+ * `context.agent` (its comms address), else its harness session / title.
+ */
 export function notifySenderAgent(item: Pick<InboxItem, "notify" | "fromAgent">): string | undefined {
-  return item.notify.context?.session || item.notify.context?.title || item.fromAgent;
+  const c = item.notify.context;
+  return c?.agent || c?.session || c?.title || item.fromAgent;
 }
 
 export function isQuestion(item: InboxItem, now = Date.now()): boolean {

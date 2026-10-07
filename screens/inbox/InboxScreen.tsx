@@ -58,8 +58,8 @@ export function QuestionCard({ item, machineName }: { item: InboxItem; machineNa
         </Mono>
       ) : null}
       <Mono size={10} faint style={{ marginTop: 4 }}>
-        {machineName}
-        {n.context?.title ? ` · ${n.context.title}` : ""}
+        {n.context?.agent || machineName}
+        {n.context?.title && !n.context?.agent ? ` · ${n.context.title}` : ""}
         {n.reason ? ` · ${n.reason}` : ""}
       </Mono>
       <View style={[ui.rowGap, { marginTop: spacing.md }]}>
@@ -247,8 +247,8 @@ export default function InboxScreen() {
               <View style={[s.card, { borderLeftColor: e.item.notify.priority === "high" ? colors.urgent : colors.alert }]}>
                 <View style={ui.row}>
                   <Mono size={10} faint bold style={{ letterSpacing: 1 }}>
-                    {nameOf(e.item.fromMachine).toUpperCase()}
-                    {e.item.notify.context?.title ? ` · ${e.item.notify.context.title}` : ""}
+                    {(e.item.notify.context?.agent || nameOf(e.item.fromMachine)).toUpperCase()}
+                    {e.item.notify.context?.title && !e.item.notify.context?.agent ? ` · ${e.item.notify.context.title}` : ""}
                   </Mono>
                   <Mono size={10} faint>{formatAgo(e.at, now)}</Mono>
                 </View>

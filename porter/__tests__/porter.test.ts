@@ -122,5 +122,9 @@ describe("porter client", () => {
 
     await store.setPref("blocked", agentKey("m_mac", "sess-9"), true);
     expect(await store.ingestNotify("m_mac", "a_asker", { ...notify, id: "ntf_3" }, "comms")).toBe(false);
+    // v1: porter carries notifies; the originating agent is context.agent.
+    const fromJoana = { id: "ntf_4", title: "x", context: { agent: "pi:joana", session: "s-1" } };
+    await store.setPref("blocked", agentKey("m_mac", "pi:joana"), true);
+    expect(await store.ingestNotify("m_mac", "a_porter", fromJoana, "comms")).toBe(false);
   });
 });

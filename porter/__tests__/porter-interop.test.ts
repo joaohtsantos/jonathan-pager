@@ -102,6 +102,8 @@ describe.skipIf(!BROKER || !CLI)("porter v1 interop with Go", () => {
     const n = await until(() => store.getSnapshot().inbox.find((i) => i.notify.title === "Deploy finished"));
     expect(n.notify.reason).toBe("interop test");
     expect(n.fromMachine).toBe(peer.machine_id);
+    // v1: carried by <machine>:porter
+    expect(n.fromAgent).toBe(await phone.resolveAgent(peer.machine_id, "porter"));
 
     // Agent lifecycle through the real porter event CLI.
     const sid = `itsess-${Date.now()}`;

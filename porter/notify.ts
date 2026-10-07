@@ -65,12 +65,12 @@ export async function presentNotify(store: PorterStore, item: InboxItem) {
   if (store.isSilenced(item.fromMachine, notifySenderAgent(item))) return;
   if (!(await store.claimShown(`notify:${item.fromMachine}:${item.id}`, 7 * 86_400_000))) return;
   const n = item.notify;
-  const ctx = n.context?.title ? ` · ${n.context.title}` : "";
+  const ctx = n.context?.agent ? ` · ${n.context.agent}` : n.context?.title ? ` · ${n.context.title}` : "";
   const title = `${n.title}`;
   const parts = [n.body, n.ask?.length ? `[ ${n.ask.join(" / ")} ]` : ""].filter(Boolean);
   await present(
     title,
-    parts.join("\n") || `${machineName(store, item.fromMachine, n.context?.machine)}${ctx}`,
+    [...parts, `${n.context?.agent ? n.context.agent : machineName(store, item.fromMachine, n.context?.machine) + ctx}`].join("\n"),
     { porterLocal: "1", kind: "notify", machine: item.fromMachine, id: item.id },
     n.priority === "high" || !!n.ask?.length
   );

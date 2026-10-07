@@ -55,12 +55,13 @@ export default function InboxItemScreen() {
       )}
 
       <Block title="SENDER">
+        <KV label="FROM" value={n.context?.agent ?? "—"} />
         <KV label="MACHINE" value={machineName} />
         <KV label="HARNESS" value={n.context?.harness ?? "—"} />
         <KV label="AGENT" value={n.context?.title ?? "—"} />
         <KV label="PROJECT" value={n.context?.project ?? "—"} />
         <KV label="SESSION" value={n.context?.session ?? "—"} />
-        <KV label="COMMS FROM" value={item.fromAgent ? `${item.fromMachine}:${item.fromAgent}` : `${item.fromMachine} (push)`} />
+        <KV label="CARRIER" value={item.fromAgent ? `${item.fromMachine}:${item.fromAgent}` : `${item.fromMachine} (push)`} />
         <KV label="REASON" value={n.reason ?? "—"} />
         <KV label="PRIORITY" value={n.priority ?? "normal"} />
         <KV label="KIND" value={n.kind ?? "message"} />

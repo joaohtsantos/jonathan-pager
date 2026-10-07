@@ -63,7 +63,7 @@ export interface Notify {
   ask?: string[];
   expires_at?: string;
   link?: string;
-  context?: { machine?: string; harness?: string; session?: string; title?: string; project?: string };
+  context?: { machine?: string; agent?: string; harness?: string; session?: string; title?: string; project?: string };
   trust?: { receiver?: string; sender?: string };
   sent_at?: string;
 }

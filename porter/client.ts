@@ -73,8 +73,8 @@ export class PorterClient {
       answer: { choice, at: Date.now(), state: "sending" },
     }));
     try {
-      // A notify seen only via push has no comms sender agent yet; porter on
-      // that machine is the asker for permission/trust questions.
+      // Answers go to the exact carrier (`<machine>:porter`), which forwards
+      // to the asking agent. Seen only via push: address porter by alias.
       const to = item.fromAgent ?? PORTER_ALIAS;
       await this.node.send(item.fromMachine, to, JSON.stringify({ type: "porter.answer", v: 1, id: item.id, choice }));
       await this.store.updateInbox(item.id, item.fromMachine, (i) => ({ ...i, answer: { ...i.answer!, state: "sent" } }));

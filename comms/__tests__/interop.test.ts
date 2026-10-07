@@ -22,11 +22,11 @@ const NODE = process.env.COMMS_IT_NODE ?? "mac";
 const go = (...args: string[]) => execFileSync(CLI!, [NODE, ...args], { encoding: "utf8" });
 const goJSON = (...args: string[]) => JSON.parse(go(...args, "--json"));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until<T>(fn: () => T | Promise<T>, ms = 15000): Promise<T> {
+async function until<T>(fn: () => T | Promise<T>, ms = 15000): Promise<NonNullable<T>> {
   const end = Date.now() + ms;
   for (;;) {
     const v = await fn();
-    if (v) return v;
+    if (v) return v as NonNullable<T>;
     if (Date.now() > end) throw new Error("timed out");
     await sleep(250);
   }
@@ -74,7 +74,7 @@ describe.skipIf(!BROKER || !CLI)("interop with Go comms", () => {
 
     // Go agent → phone (live stream).
     const sent = goJSON("post", "--from", "bot", "--to", `${alias}:app`, "hello phone ✓");
-    const got = (await until(() => received.find((m) => m.id === sent.id)))!;
+    const got = await until(() => received.find((m) => m.id === sent.id));
     expect(got.body).toBe("hello phone ✓");
     expect(got.fromAgent).toBe(agentId);
     // Phone's handed_off receipt reaches the Go node.

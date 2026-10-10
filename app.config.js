@@ -9,14 +9,14 @@ export default {
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
-      backgroundColor: "#111111",
+      backgroundColor: "#000000",
     },
     android: {
       package: "cc.jsplayground.pager",
       googleServicesFile:
         process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       adaptiveIcon: {
-        backgroundColor: "#0A0A0A",
+        backgroundColor: "#050505",
         foregroundImage: "./assets/android-icon-foreground.png",
         backgroundImage: "./assets/android-icon-background.png",
         monochromeImage: "./assets/android-icon-monochrome.png",
@@ -36,8 +36,8 @@ export default {
       [
         "expo-notifications",
         {
-          icon: "./assets/icon.png",
-          color: "#111111",
+          icon: "./assets/notification-icon.png",
+          color: "#F2560B",
         },
       ],
       [

@@ -39,4 +39,4 @@ Expo / React Native mobile app — the frontend of the Pager pair. Receives push
 - `google-services.json` is committed alongside the app and is **environment-specific** — keep it in sync with the Firebase project.
 - Bearer key in `constants.ts` ships with the binary — rotating requires a new EAS build.
 - iOS push needs APNs configured separately on the EAS side.
-- Dark UI (`userInterfaceStyle: "dark"`, splash bg `#111111`) is hardcoded in `app.config.js`.
+- Dark UI (`userInterfaceStyle: "dark"`, splash bg `#000000`) is hardcoded in `app.config.js`.

@@ -383,11 +383,38 @@ export function MenuSheet({ visible, title, sub, options, onClose }: { visible: 
   );
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+/** Centered empty state: icon tile, title, one line, optional button. */
+export function Empty({ title, hint, icon, action }: { title: string; hint?: string; icon?: FeatherName; action?: { label: string; onPress: () => void } }) {
   return (
     <View style={s.empty}>
-      <T size={17} weight="600" color={t.dim}>{title}</T>
-      {hint ? <T size={13} color={t.faint} style={{ textAlign: "center", marginTop: 6 }}>{hint}</T> : null}
+      {icon ? (
+        <View style={s.emptyIcon}>
+          <Feather name={icon} size={26} color="rgba(255,255,255,0.6)" />
+        </View>
+      ) : null}
+      <T size={18} weight="700" color={t.white} style={{ textAlign: "center" }}>{title}</T>
+      {hint ? <T size={14} color="rgba(255,255,255,0.6)" style={{ textAlign: "center", lineHeight: 20 }}>{hint}</T> : null}
+      {action ? (
+        <Pressable onPress={action.onPress} style={({ pressed }) => [s.emptyBtn, pressed && { opacity: 0.7 }]}>
+          <T size={15} weight="600" color={t.accent}>{action.label}</T>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** "No connection · showing what was true at HH:MM · retrying" under a tab header. */
+export function OfflineBanner({ offline, since }: { offline: boolean; since: number }) {
+  if (!offline) return null;
+  const d = since ? new Date(since) : null;
+  const hm = d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "";
+  return (
+    <View accessibilityRole="alert" style={s.banner}>
+      <Feather name="wifi-off" size={16} color="rgba(255,255,255,0.7)" />
+      <T size={13} color="rgba(255,255,255,0.85)" style={{ flex: 1 }} lines={2}>
+        {hm ? `No connection · showing what was true at ${hm}` : "No connection"}
+      </T>
+      <T size={13} color={t.text3}>retrying</T>
     </View>
   );
 }
@@ -428,5 +455,8 @@ const s = StyleSheet.create({
   opt: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 48, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: t.hairline },
   emo: { width: 22, textAlign: "center", fontSize: 16 },
   sheetCancel: { marginTop: 16, marginHorizontal: 18, minHeight: 44, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
-  empty: { alignItems: "center", justifyContent: "center", paddingVertical: 64, paddingHorizontal: 32 },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 48, paddingHorizontal: 40 },
+  emptyIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.07)", alignItems: "center", justifyContent: "center" },
+  emptyBtn: { marginTop: 6, minHeight: 44, paddingHorizontal: 18, borderRadius: 10, backgroundColor: "rgba(10,132,255,0.16)", justifyContent: "center" },
+  banner: { marginHorizontal: 12, marginBottom: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.sheet, flexDirection: "row", alignItems: "center", gap: 10 },
 });

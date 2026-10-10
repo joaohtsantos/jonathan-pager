@@ -13,6 +13,7 @@ import { BackHeader, BigButton, Chevron, Input, KVRow, List, PageTitle, Screen, 
 import { useToast } from "../../components/Toast";
 import { useToken } from "../../tokenContext";
 import { useLocation } from "../../locationContext";
+import { usePhoneAlias } from "../../lib/phoneAlias";
 import { t } from "../../theme";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -22,6 +23,7 @@ export default function MachinesSettingsScreen() {
   const nav = useNavigation<NativeStackNavigationProp<MachinesStackParamList>>();
   const { rt, connection, connectionError, refreshNode, mock, setMock } = usePorter();
   const { token, error: tokenError } = useToken();
+  const [alias] = usePhoneAlias();
   const loc = useLocation();
   const toast = useToast();
   const node = rt?.node;
@@ -80,8 +82,8 @@ export default function MachinesSettingsScreen() {
           <List>
             <KVRow
               label={<T size={15}>Identity</T>}
-              sub={<T mono size={12} color={t.text3}>{node ? `phone · ${short(node.machineId)}` : "starting…"}</T>}
-              right={<TextBtn label="Copy" size={15} disabled={!node} onPress={() => node && copy(JSON.stringify(node.identityBundle("phone")), "Identity")} />}
+              sub={<T mono size={12} color={t.text3}>{node ? `${alias} · ${short(node.machineId)}` : "starting…"}</T>}
+              right={<TextBtn label="Copy" size={15} disabled={!node} onPress={() => node && copy(JSON.stringify(node.identityBundle(alias)), "Identity")} />}
             />
             <KVRow label="App" value={`v${version} · ${Platform.OS === "android" ? "Android" : Platform.OS}`} />
           </List>

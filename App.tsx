@@ -1,5 +1,6 @@
-import { useEffect } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { useEffect, useState } from "react";
+import { DarkTheme, NavigationContainer } from "@react-navigation/native";
+import { View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
@@ -26,7 +27,9 @@ import { TokenProvider } from "./tokenContext";
 import { navigateTo, navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
-import { PorterProvider } from "./porter/PorterProvider";
+import { PorterProvider, usePorter } from "./porter/PorterProvider";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Onboarding from "./screens/onboarding/Onboarding";
 import { ACTION } from "./porter/notify";
 import { handleNotificationAction } from "./porter/runtime";
 import NotificationSettingsScreen from "./screens/machines/NotificationSettingsScreen";
@@ -175,6 +178,39 @@ function MainTabs() {
   );
 }
 
+const ONBOARDED_KEY = "onboarded.v1";
+
+/** First launch: onboarding until a broker is configured (existing installs skip it). */
+function Gate() {
+  const { rt, bootError } = usePorter();
+  const [show, setShow] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (bootError) return setShow(false);
+    if (!rt) return;
+    AsyncStorage.getItem(ONBOARDED_KEY)
+      .then((v) => setShow(!v && !rt.node.brokerURL))
+      .catch(() => setShow(false));
+  }, [rt, bootError]);
+  if (show === null) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
+  if (show) {
+    return (
+      <Onboarding
+        onDone={() => {
+          AsyncStorage.setItem(ONBOARDED_KEY, "1").catch(() => undefined);
+          setShow(false);
+        }}
+      />
+    );
+  }
+  return (
+    <NavigationContainer ref={navigationRef} theme={NAV_THEME}>
+      <MainTabs />
+    </NavigationContainer>
+  );
+}
+
+const NAV_THEME = { ...DarkTheme, colors: { ...DarkTheme.colors, background: t.bg, card: t.tabBar, primary: t.accent, border: "rgba(255,255,255,0.07)" } };
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -182,10 +218,8 @@ export default function App() {
         <TokenProvider>
           <PorterProvider>
             <LocationProvider>
-              <NavigationContainer ref={navigationRef}>
-                <StatusBar style="light" />
-                <MainTabs />
-              </NavigationContainer>
+              <StatusBar style="light" />
+              <Gate />
             </LocationProvider>
           </PorterProvider>
         </TokenProvider>

@@ -7,8 +7,9 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useLocation } from "../../locationContext";
+import { usePorter } from "../../porter/PorterProvider";
 import { locationApi, type TimelineSegment } from "../../locationSetup";
-import { LargeHeader, Screen, T, alpha } from "../../components/ui";
+import { LargeHeader, OfflineBanner, Screen, T, alpha } from "../../components/ui";
 import { useZoneColors, UNKNOWN_COLOR, TRANSIT_COLOR } from "../../lib/zoneColors";
 import { RetconSheet } from "./sheets";
 import { RangeSheet } from "./RangeSheet";
@@ -53,6 +54,7 @@ export default function LocationScreen() {
   const nav = useNavigation<NativeStackNavigationProp<LocationStackParamList>>();
   const { zones, current, currentError, refreshCurrent, refreshZones, tracking } = useLocation();
   const { colorOf } = useZoneColors(zones);
+  const { phoneOffline, lastOnlineAt } = usePorter();
   const [period, setPeriod] = useState<Period>("day");
   const [offset, setOffset] = useState(0);
   const [custom, setCustom] = useState<{ from: Date; to: Date }>(() => ({ from: new Date(Date.now() - 7 * 86_400_000), to: new Date() }));
@@ -130,6 +132,7 @@ export default function LocationScreen() {
           </Pressable>
         }
       />
+      <OfflineBanner offline={phoneOffline} since={lastOnlineAt} />
       <View style={s.segBar} accessibilityRole="tablist">
         {PERIODS.map((p) => (
           <Pressable key={p.id} accessibilityRole="tab" accessibilityState={{ selected: period === p.id }} onPress={() => { setPeriod(p.id); setOffset(0); }} style={[s.segBtn, period === p.id && { backgroundColor: "rgba(255,255,255,0.2)" }]}>

@@ -43,3 +43,11 @@ describe("redesign selectors", () => {
     expect(orderGroups(groups, [MOCK_IDS.work, MOCK_IDS.mac, MOCK_IDS.pi], true).map((g) => g.machine.machineId)).toEqual([MOCK_IDS.work, MOCK_IDS.mac, MOCK_IDS.pi]);
   });
 });
+
+import { keyFingerprint } from "../../lib/fingerprint";
+describe("key fingerprint", () => {
+  it("is 8 groups of 4 hex chars of sha256(pubkey)", () => {
+    // sha256 of 32 zero bytes = 66687aadf862bd776c8fc18b8e9f8e20…
+    expect(keyFingerprint("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")).toBe("6668 7aad f862 bd77 6c8f c18b 8e9f 8e20");
+  });
+});

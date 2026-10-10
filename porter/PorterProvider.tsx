@@ -41,6 +41,10 @@ interface PorterContextValue {
   /** machine id → online from the broker directory; null until known. */
   presence: Presence | null;
   actions: PorterActions;
+  /** The phone's own comms link is down (configured but not streaming). */
+  phoneOffline: boolean;
+  /** Last time the comms stream was online (ms), for "showing what was true at". */
+  lastOnlineAt: number;
 }
 
 const noAction = async () => {};
@@ -60,6 +64,8 @@ const Ctx = createContext<PorterContextValue>({
   setMock: () => {},
   presence: null,
   actions: NO_ACTIONS,
+  phoneOffline: false,
+  lastOnlineAt: 0,
 });
 
 export const usePorter = () => useContext(Ctx);
@@ -91,6 +97,7 @@ export function PorterProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection] = useState<ConnectionState>("idle");
   const [connectionError, setConnectionError] = useState("");
   const [version, setVersion] = useState(0);
+  const [lastOnlineAt, setLastOnlineAt] = useState(0);
   const lastSubscribe = useRef<{ at: number; token: string | null }>({ at: 0, token: null });
 
   useEffect(() => {
@@ -101,6 +108,7 @@ export function PorterProvider({ children }: { children: ReactNode }) {
         setRt(r);
         r.node.onConnection((c) => {
           setConnection(c);
+          if (c === "online") setLastOnlineAt(Date.now());
           setConnectionError(r.node.lastError);
         });
       })
@@ -222,12 +230,14 @@ export function PorterProvider({ children }: { children: ReactNode }) {
   }, [mock, mockStore, rt, token]);
 
   const store = mock ? mockStore : rt?.store ?? null;
+  // While online, "now" is the freshest time; keep it ticking for the banner.
+  const phoneOffline = !mock && !!rt?.node.configured && (connection === "offline" || connection === "error");
   const mockPres = useMemo(() => mockPresence(), []);
   const shownPresence = mock ? mockPres : presence;
 
   return (
     <Ctx.Provider
-      value={{ rt, bootError, connection, connectionError, version, refreshNode, resubscribe, store, mock, setMock, presence: shownPresence, actions }}
+      value={{ rt, bootError, connection, connectionError, version, refreshNode, resubscribe, store, mock, setMock, presence: shownPresence, actions, phoneOffline, lastOnlineAt: connection === "online" ? Date.now() : lastOnlineAt }}
     >
       {children}
     </Ctx.Provider>

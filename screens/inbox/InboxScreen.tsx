@@ -11,7 +11,7 @@ import { filterInbox, formatClock, formatHM, groupByDay, notifyLook, resolutionT
 import type { InboxItem } from "../../porter/store";
 import { fetchPendingRequests, fetchPushes, markAllPushesRead, pagerConfigured, setPushRead, type PagerPush } from "../../lib/pagerApi";
 import type { InboxStackParamList } from "../../navigation/types";
-import { Empty, LargeHeader, MenuSheet, Screen, T, type MenuOption } from "../../components/ui";
+import { Empty, LargeHeader, OfflineBanner, MenuSheet, Screen, T, type MenuOption } from "../../components/ui";
 import ConfirmModal from "../../components/ConfirmModal";
 import { useToast } from "../../components/Toast";
 import { KindIcon, Sender } from "./inboxLook";
@@ -26,7 +26,7 @@ const PAGER = "__pager__";
 export default function InboxScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<InboxStackParamList, "InboxList">>();
-  const { rt, version, store, mock } = usePorter();
+  const { rt, version, store, mock, phoneOffline, lastOnlineAt } = usePorter();
   const state = usePorterState();
   const toast = useToast();
   const now = useTick(1000);
@@ -169,8 +169,9 @@ export default function InboxScreen() {
           </View>
         }
       />
+      <OfflineBanner offline={phoneOffline} since={lastOnlineAt} />
       <ScrollView
-        contentContainerStyle={{ gap: 24, paddingBottom: 20 }}
+        contentContainerStyle={{ flexGrow: 1, gap: 24, paddingBottom: 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.faint} colors={[t.accent]} progressBackgroundColor={t.sheet} />}
       >
         {waitingCount > 0 ? (
@@ -226,7 +227,7 @@ export default function InboxScreen() {
           </View>
         ))}
 
-        {!waitingCount && !days.length ? <Empty title="Nothing here" hint="Pull down to sync." /> : null}
+        {!waitingCount && !days.length ? <Empty icon="check" title="All clear" hint={machineFilter || agentFilter ? "Nothing from this sender." : "Nothing waiting on you and no messages in the last 7 days."} /> : null}
         {pagerError && showPager ? <T size={11} color={t.faint} style={{ marginHorizontal: 20 }}>pager-api: {pagerError}</T> : null}
       </ScrollView>
       <MenuSheet visible={menu} title="Show" options={menuOptions} onClose={() => setMenu(false)} />

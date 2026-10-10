@@ -12,6 +12,7 @@ import { BackHeader, Chevron, Empty, KVRow, List, Screen, SectionHeader, T, Text
 import ConfirmModal from "../../components/ConfirmModal";
 import { useToast } from "../../components/Toast";
 import { useToken } from "../../tokenContext";
+import { usePhoneAlias } from "../../lib/phoneAlias";
 import { navigateTo } from "../../navigationRef";
 import { liveAgentCount } from "./MachinesScreen";
 import { t } from "../../theme";
@@ -30,6 +31,7 @@ export default function MachineDetailScreen() {
   const nav = useNavigation<NativeStackNavigationProp<MachinesStackParamList>>();
   const { rt, refreshNode, actions, presence, mock, store } = usePorter();
   const { token } = useToken();
+  const [alias] = usePhoneAlias();
   const state = usePorterState();
   const toast = useToast();
   const now = useTick(15_000);
@@ -111,7 +113,7 @@ export default function MachineDetailScreen() {
             <KVRow label="Agents" value={live.online ? `${counts.running} running` : `${counts.live} live`} right={<Chevron />} onPress={() => navigateTo("Agents", "AgentsList")} />
             <KVRow
               label="You approve here"
-              sub={approver ? undefined : "set on the machine: comms porter setup --approver phone"}
+              sub={approver ? undefined : `set on the machine: comms porter setup --approver ${alias}`}
               right={<Toggle value={approver} disabled={!approver} onChange={(v) => !v && setConfirmResign(true)} />}
             />
             <KVRow

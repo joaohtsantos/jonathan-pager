@@ -8,7 +8,7 @@ import { usePorter, usePorterState, useTick } from "../../porter/PorterProvider"
 import { formatHM, livenessText, machineLiveness } from "../../porter/selectors";
 import type { MachineState } from "../../porter/store";
 import type { MachinesStackParamList } from "../../navigation/types";
-import { Chevron, Empty, LargeHeader, Screen, T } from "../../components/ui";
+import { Chevron, Empty, LargeHeader, OfflineBanner, Screen, T } from "../../components/ui";
 import { t } from "../../theme";
 
 /** Paired machines (or the mock ones) with whatever porter state we have. */
@@ -39,7 +39,7 @@ function summary(m: MachineState, online: boolean, seenAt: number): string {
 
 export default function MachinesScreen() {
   const nav = useNavigation<NativeStackNavigationProp<MachinesStackParamList>>();
-  const { presence, bootError } = usePorter();
+  const { presence, bootError, phoneOffline, lastOnlineAt } = usePorter();
   const now = useTick(15_000);
   const machines = useMachineList();
 
@@ -58,10 +58,11 @@ export default function MachinesScreen() {
           </View>
         }
       />
-      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+      <OfflineBanner offline={phoneOffline} since={lastOnlineAt} />
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}>
         {bootError ? <T size={12} color={t.danger} style={{ marginHorizontal: 20, marginBottom: 12 }}>comms failed to start: {bootError}</T> : null}
         {machines.length === 0 ? (
-          <Empty title="No machines yet" hint="Tap + to pair one. It needs comms with porter enabled." />
+          <Empty icon="server" title="No machines yet" hint="Pair a Mac or the Pi to see its agents and get its pushes." action={{ label: "Add a machine", onPress: () => nav.navigate("Pair") }} />
         ) : (
           <View style={{ borderTopWidth: 1, borderTopColor: t.divider }}>
             {machines.map((m) => {

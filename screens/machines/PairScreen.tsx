@@ -1,9 +1,9 @@
 // Add a machine (design: PairFinal): three numbered steps, then "Pair <alias>".
 // Subscribes to agents, status and trusts; changeable on the machine page.
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { useNavigation } from "@react-navigation/native";
+import { NavigationContext } from "@react-navigation/native";
 import { usePorter } from "../../porter/PorterProvider";
 import { parseBundle } from "../../comms/node";
 import { BackHeader, BigButton, M, PageTitle, Screen, T } from "../../components/ui";
@@ -37,7 +37,8 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 export default function PairScreen({ onDone, embedded }: { onDone?: () => void; embedded?: boolean } = {}) {
-  const nav = useNavigation();
+  // Also rendered by onboarding, outside any navigator.
+  const nav = useContext(NavigationContext);
   const { rt, refreshNode } = usePorter();
   const { token } = useToken();
   const toast = useToast();
@@ -46,7 +47,7 @@ export default function PairScreen({ onDone, embedded }: { onDone?: () => void; 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const done = onDone ?? (() => nav.goBack());
+  const done = onDone ?? (() => nav?.goBack());
 
   const parsed = useMemo(() => {
     if (!text.trim()) return null;
@@ -131,7 +132,7 @@ export default function PairScreen({ onDone, embedded }: { onDone?: () => void; 
   if (embedded) return body;
   return (
     <Screen>
-      <BackHeader label="Machines" onBack={() => nav.goBack()} />
+      <BackHeader label="Machines" onBack={() => nav?.goBack()} />
       <View style={{ paddingTop: 2, paddingHorizontal: 20, paddingBottom: 18 }}>
         <PageTitle title="Add a machine" />
       </View>

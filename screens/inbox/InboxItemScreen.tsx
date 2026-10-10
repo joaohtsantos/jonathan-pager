@@ -19,7 +19,7 @@ const isDenyish = (c: string) => /^(deny|dismiss|no|reject|skip|cancel|ignore)/i
 export default function InboxItemScreen() {
   const { params } = useRoute<RouteProp<InboxStackParamList, "InboxItem">>();
   const nav = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
-  const { actions, store, rt, presence } = usePorter();
+  const { actions, store, rt, presence, phoneOffline } = usePorter();
   const state = usePorterState();
   const toast = useToast();
   const now = useTick(1000);
@@ -99,9 +99,9 @@ export default function InboxItemScreen() {
   // ---- bottom actions (questions only) -------------------------------------------
   let bottom = null;
   if (asking && open) {
-    const offline = !live.online;
+    const offline = !live.online || phoneOffline;
     const disabled = offline || busy || item.answer?.state === "sending";
-    const note = offline ? `Can't reach ${machineName} — buttons come back when it does` : item.answer?.state === "failed" ? `Couldn't send: ${item.answer.error ?? "error"} — try again` : undefined;
+    const note = !live.online ? `Can't reach ${machineName} — buttons come back when it does` : phoneOffline ? "No connection — buttons come back when it does" : item.answer?.state === "failed" ? `Couldn't send: ${item.answer.error ?? "error"} — try again` : undefined;
     const choices = n.ask!;
     if (n.draft !== undefined) {
       const sendChoice = choices.find((c) => !isDenyish(c)) ?? choices[0];

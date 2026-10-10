@@ -81,7 +81,7 @@ function resolutionNote(r: Resolution, machineName: string): { tone: "green" | "
 export default function AgentDetailScreen() {
   const { params } = useRoute<RouteProp<{ AgentDetail: AgentDetailParams }, "AgentDetail">>();
   const nav = useNavigation<Nav>();
-  const { actions, presence, rt } = usePorter();
+  const { actions, presence, rt, phoneOffline } = usePorter();
   const state = usePorterState();
   const now = useTick(1000);
   const toast = useToast();
@@ -182,12 +182,14 @@ export default function AgentDetailScreen() {
       const choices = question?.notify.ask ?? ["Deny", "Allow"];
       const deny = choices.find((c) => /deny|no|reject/i.test(c)) ?? choices[choices.length - 1];
       const allow = choices.find((c) => c !== deny) ?? choices[0];
-      const disabled = !live.online || busy || !question || question.answer?.state === "sending";
+      const disabled = !live.online || phoneOffline || busy || !question || question.answer?.state === "sending";
       bottom = (
         <BottomBar
           note={
             !live.online
               ? `Can't reach ${name} — buttons come back when it does`
+              : phoneOffline
+                ? "No connection — buttons come back when it does"
               : question?.answer?.state === "failed"
                 ? `Couldn't send: ${question.answer.error ?? "error"} — try again`
                 : exp

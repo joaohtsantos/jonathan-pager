@@ -11,9 +11,10 @@ import { formatClock, graveyard, groupedAgents, liveDurations, livenessText, mac
 import type { MachineState } from "../../porter/store";
 import type { Agent } from "../../porter/types";
 import type { AgentsStackParamList } from "../../navigation/types";
-import { Empty, LargeHeader, Screen, StatusDot, T, TextBtn, Toggle, statusColor } from "../../components/ui";
+import { Empty, LargeHeader, OfflineBanner, Screen, StatusDot, T, TextBtn, Toggle, statusColor } from "../../components/ui";
 import { usePersisted } from "../../lib/usePersisted";
 import { t } from "../../theme";
+import { navigateTo } from "../../navigationRef";
 
 type Nav = NativeStackNavigationProp<AgentsStackParamList>;
 
@@ -95,7 +96,7 @@ function MachineHeader({ g, open, online, liveText, onToggle }: { g: MachineGrou
 
 export default function AgentsScreen() {
   const nav = useNavigation<Nav>();
-  const { rt, version, presence, mock } = usePorter();
+  const { rt, version, presence, mock, phoneOffline, lastOnlineAt } = usePorter();
   const state = usePorterState();
   const now = useTick(1000);
   const [editing, setEditing] = useState(false);
@@ -136,6 +137,7 @@ export default function AgentsScreen() {
   return (
     <Screen>
       <LargeHeader title="Agents" count={total} right={groups.length ? <TextBtn label={editing ? "Done" : "Edit"} size={15} onPress={() => setEditing(!editing)} /> : undefined} />
+      <OfflineBanner offline={phoneOffline} since={lastOnlineAt} />
       {editing ? (
         <ScrollView contentContainerStyle={{ paddingTop: 4, paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
           <T size={12} weight="600" color="rgba(255,255,255,0.45)" style={{ paddingHorizontal: 4 }}>
@@ -174,7 +176,7 @@ export default function AgentsScreen() {
           </T>
         </ScrollView>
       ) : groups.length === 0 ? (
-        <Empty title="No machines yet" hint="Pair a machine in the Machines tab to see its agents here." />
+        <Empty icon="server" title="No machines yet" hint="Pair a machine to see its agents here." action={{ label: "Add a machine", onPress: () => navigateTo("Machines", "Pair") }} />
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 16, gap: 22 }}>
           {ordered.map((g) => {
@@ -188,7 +190,7 @@ export default function AgentsScreen() {
                   <View style={s.box}>
                     {g.nodes.length === 0 ? (
                       <T size={12} color={t.faint} style={{ paddingHorizontal: 18, paddingVertical: 11 }}>
-                        {g.machine.agentsAt ? "No live agents" : "Waiting for porter on this machine"}
+                        {g.machine.agentsAt || mock ? "Nothing running" : "Waiting for porter on this machine"}
                       </T>
                     ) : null}
                     {g.nodes.map((n) => (

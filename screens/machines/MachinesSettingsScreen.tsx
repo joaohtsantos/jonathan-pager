@@ -1,6 +1,7 @@
 // Settings (design: MachinesSettings): this phone, connection (broker, service
 // key, push token), location; plus a dev-only mock-data switch.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { CommsNode } from "../../comms/node";
 import { Linking, Platform, ScrollView, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
@@ -17,6 +18,30 @@ import { usePhoneAlias } from "../../lib/phoneAlias";
 import { t } from "../../theme";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const ago = (t: number) => (t ? `${Math.max(0, Math.round((Date.now() - t) / 1000))}s ago` : "never");
+
+/** Live comms state for debugging delivery on the device (dev builds). */
+function CommsDebug({ node }: { node: CommsNode | undefined }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!node) return null;
+  const d = node.debug;
+  const lines = [
+    `auth: ${d.authError ? `FAIL ${d.authError}` : d.authOkAt ? `ok ${ago(d.authOkAt)}` : "not yet"}`,
+    `presence: ${d.presenceError ? `FAIL ${d.presenceError}` : d.presenceAt ? `${d.presenceOnline ? "online" : "offline"} renewed ${ago(d.presenceAt)}` : "never"}`,
+    `stream: ${d.stream}${d.streamOpenedAt ? ` (opened ${ago(d.streamOpenedAt)})` : ""} · last event ${d.lastEventType || "-"} ${ago(d.lastEventAt)} · envelopes ${d.envelopes}`,
+    `check (15s): ${d.checkAt ? `${ago(d.checkAt)} ${d.checkNote}` : "never"} · node ${node.connection}`,
+  ];
+  return (
+    <T mono size={11} color={t.text3} selectable style={{ marginHorizontal: 20, marginTop: 6 }}>
+      {lines.join("\n")}
+    </T>
+  );
+}
+
 const short = (s: string, head = 6, tail = 4) => (s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s);
 
 export default function MachinesSettingsScreen() {
@@ -130,6 +155,7 @@ export default function MachinesSettingsScreen() {
             <List>
               <KVRow label={<T size={15}>Mock data</T>} sub="Show fake machines, agents and inbox (contract v1). Actions stay local." right={<Toggle value={mock} onChange={setMock} />} />
             </List>
+            <CommsDebug node={node} />
           </View>
         ) : null}
       </ScrollView>

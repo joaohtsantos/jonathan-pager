@@ -37,7 +37,21 @@ export interface BrokerOptions {
   fetch?: typeof fetch;
   openStream?: StreamOpener;
   userAgent?: string;
+  /** Observes every challenge-auth outcome (debug status line). */
+  onAuth?: (ok: boolean, error?: string) => void;
 }
+
+/**
+ * Accept header for GET /v1/stream. It must START with text/event-stream:
+ * the Expo dev-client injects an OkHttp network interceptor
+ * (ExpoNetworkInspectOkHttpNetworkInterceptor) that peeks up to 1 MiB of every
+ * response body before handing the response on, and it only skips that for
+ * text/event-stream (by Content-Type or request Accept) or a chunked
+ * Transfer-Encoding. Over HTTP/2 (Cloudflare) there is no chunked header, so
+ * the NDJSON stream's headers never reach the XHR: no events, no presence.
+ * The broker ignores Accept, so this is purely a client-side opt-out.
+ */
+export const STREAM_ACCEPT = "text/event-stream, application/x-ndjson";
 
 export function normalizeBrokerURL(raw: string): string {
   const url = raw.trim().replace(/\/+$/, "");
@@ -105,6 +119,17 @@ export class BrokerClient {
 
   /** Challenge → open anonymous box → verify binding → complete → bearer token. */
   async authenticate(): Promise<string> {
+    try {
+      const token = await this.authenticateOnce();
+      this.opts.onAuth?.(true);
+      return token;
+    } catch (e) {
+      this.opts.onAuth?.(false, e instanceof Error ? e.message : String(e));
+      throw e;
+    }
+  }
+
+  private async authenticateOnce(): Promise<string> {
     const { machineId, keys } = this.opts;
     const start = await this.raw<{ id: string; sealed: string }>(
       "",
@@ -205,7 +230,7 @@ export class BrokerClient {
     const token = await this.credential();
     const handle = this.opener({
       url: this.url + "/v1/stream",
-      headers: { ...this.headers(token, false), Accept: "application/x-ndjson" },
+      headers: { ...this.headers(token, false), Accept: STREAM_ACCEPT },
       onOpen,
       onLine: (line) => {
         try {

@@ -83,6 +83,29 @@ interface OutboxItem {
 
 export type ConnectionState = "idle" | "connecting" | "online" | "offline" | "error";
 
+/** Go node cadence (types.go): presence every Heartbeat, broker lease 60 s. */
+export const HEARTBEAT_MS = 15_000;
+/** Stream must deliver headers this fast, else it is recycled. */
+const OPEN_TIMEOUT_MS = 20_000;
+/** Broker writes a heartbeat every 15 s; three missed means a dead stream. */
+const SILENT_MS = 45_000;
+
+/** Snapshot for the on-device debug line (Settings › Developer). Times are epoch ms, 0 = never. */
+export interface NodeDebug {
+  authOkAt: number;
+  authError: string;
+  presenceAt: number;
+  presenceOnline: boolean;
+  presenceError: string;
+  stream: "closed" | "connecting" | "open";
+  streamOpenedAt: number;
+  lastEventAt: number;
+  lastEventType: string;
+  envelopes: number;
+  checkAt: number;
+  checkNote: string;
+}
+
 export interface NodeDeps {
   kv: KV;
   secrets: SecretStore;
@@ -127,8 +150,24 @@ export class CommsNode {
   private stream: StreamHandle | null = null;
   private running = false;
   private loopPromise: Promise<void> | null = null;
-  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  private presenceTimer: ReturnType<typeof setInterval> | null = null;
+  private wakeBackoff: (() => void) | null = null;
   private lastEventAt = 0;
+  readonly debug: NodeDebug = {
+    authOkAt: 0,
+    authError: "",
+    presenceAt: 0,
+    presenceOnline: false,
+    presenceError: "",
+    stream: "closed",
+    streamOpenedAt: 0,
+    lastEventAt: 0,
+    lastEventType: "",
+    envelopes: 0,
+    checkAt: 0,
+    checkNote: "",
+  };
   private lastProcessedAt = 0;
   connection: ConnectionState = "idle";
   lastError = "";
@@ -223,6 +262,12 @@ export class CommsNode {
           keys: this.keys,
           fetch: this.deps.fetch,
           openStream: this.deps.openStream,
+          onAuth: (ok, err) => {
+            if (ok) {
+              this.debug.authOkAt = Date.now();
+              this.debug.authError = "";
+            } else this.debug.authError = err ?? "auth failed";
+          },
         })
       : null;
   }
@@ -319,7 +364,15 @@ export class CommsNode {
       online,
       lease_expires_at: 0,
     };
-    await this.broker.putPresence(rev, [me]);
+    try {
+      await this.broker.putPresence(rev, [me]);
+      this.debug.presenceAt = Date.now();
+      this.debug.presenceOnline = online;
+      this.debug.presenceError = "";
+    } catch (e) {
+      this.debug.presenceError = e instanceof Error ? e.message : String(e);
+      throw e;
+    }
   }
 
   /** Pushes all grants and presence (Go syncBroker). */
@@ -593,6 +646,9 @@ export class CommsNode {
 
   private handleEvent = (ev: StreamEvent) => {
     this.lastEventAt = Date.now();
+    this.debug.lastEventAt = this.lastEventAt;
+    this.debug.lastEventType = ev.type;
+    if (ev.type === "envelope") this.debug.envelopes++;
     if (ev.type === "envelope" && ev.envelope) {
       let env: Envelope;
       try {
@@ -615,10 +671,23 @@ export class CommsNode {
 
   private async loop() {
     let backoff = 1000;
+    // Presence lease renewal runs on its own clock, like the Go brokerLoop
+    // (syncBroker every Heartbeat): the broker drops a stream whose machine
+    // lease (60 s) lapses, and lists the agent online only while it is fresh.
+    const renew = () => void this.putPresence(this.connection === "online").catch(() => undefined);
+    this.presenceTimer = setInterval(renew, HEARTBEAT_MS);
+    renew();
     while (this.running && this.broker) {
       this.setConnection("connecting");
+      this.debug.stream = "connecting";
       try {
+        let opened = false;
+        const startedAt = Date.now();
         const handle = await this.broker.openStream(this.handleEvent, () => {
+          opened = true;
+          this.lastEventAt = Date.now();
+          this.debug.stream = "open";
+          this.debug.streamOpenedAt = this.lastEventAt;
           this.setConnection("online");
           backoff = 1000;
           void this.syncBroker(true).catch(() => undefined);
@@ -626,29 +695,49 @@ export class CommsNode {
         });
         this.stream = handle;
         this.lastEventAt = Date.now();
-        this.heartbeat = setInterval(() => {
-          if (Date.now() - this.lastEventAt > 45_000) handle.abort(); // dead connection
-          else void this.putPresence(true).catch(() => undefined);
-        }, 15_000);
+        // Watchdog: delivery must never hinge on a stream that silently stalls
+        // (headers withheld by a proxy/interceptor, half-open TCP).
+        this.watchdog = setInterval(() => {
+          const now = Date.now();
+          this.debug.checkAt = now;
+          if (!opened && now - startedAt > OPEN_TIMEOUT_MS) {
+            this.debug.checkNote = "no stream headers in 20s, reconnecting";
+            handle.abort();
+          } else if (opened && now - this.lastEventAt > SILENT_MS) {
+            this.debug.checkNote = "stream silent 45s, reconnecting";
+            handle.abort();
+          } else this.debug.checkNote = opened ? "ok" : "waiting for headers";
+        }, Math.min(HEARTBEAT_MS, OPEN_TIMEOUT_MS / 2));
         await handle.done;
-        if (this.running) this.setConnection("offline", "stream closed");
+        if (this.running) this.setConnection("offline", opened ? "stream closed" : "stream never opened");
       } catch (e) {
         this.setConnection("error", e instanceof Error ? e.message : String(e));
       } finally {
-        if (this.heartbeat) clearInterval(this.heartbeat);
-        this.heartbeat = null;
+        if (this.watchdog) clearInterval(this.watchdog);
+        this.watchdog = null;
         this.stream = null;
+        this.debug.stream = "closed";
       }
       if (!this.running) break;
-      await new Promise((r) => setTimeout(r, backoff));
-      backoff = Math.min(backoff * 2, 30_000);
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, backoff);
+        this.wakeBackoff = () => {
+          clearTimeout(t);
+          r();
+        };
+      });
+      this.wakeBackoff = null;
+      backoff = Math.min(backoff * 2, HEARTBEAT_MS);
     }
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    this.presenceTimer = null;
   }
 
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
     this.stream?.abort();
+    this.wakeBackoff?.();
     await this.loopPromise?.catch(() => undefined);
     await this.inbound.run(async () => undefined);
     this.setConnection("idle");

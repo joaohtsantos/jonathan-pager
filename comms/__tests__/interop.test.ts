@@ -13,7 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CommsNode, type InboundMessage } from "../node";
 import { MemoryKV } from "../storage";
-import { fetchStream } from "../stream";
+import { fetchStream, xhrStream } from "../stream";
+import { makeXHRShim } from "./xhrShim";
 
 const BROKER = process.env.COMMS_IT_BROKER;
 const CLI = process.env.COMMS_IT_CLI;
@@ -88,5 +89,47 @@ describe.skipIf(!BROKER || !CLI)("interop with Go comms", () => {
     await phone.drain({ quietMs: 1500, maxMs: 15000 });
     expect(received.find((m) => m.id === later.id)?.body).toBe("while you were away");
     await until(() => goJSON("status", later.id).state === "handed_off");
+  }, 90_000);
+
+  it("RN XHR stream (dev-client peek emulated): presence online, receives, receipts", async () => {
+    const g = globalThis as { XMLHttpRequest?: unknown };
+    const prev = g.XMLHttpRequest;
+    g.XMLHttpRequest = makeXHRShim({ devClientPeek: true });
+    const phone = await CommsNode.load({ kv: new MemoryKV(), secrets: new MemoryKV(), openStream: xhrStream });
+    try {
+      await phone.configureBroker(BROKER!);
+      expect(phone.debug.authOkAt).toBeGreaterThan(0);
+      const peer = await phone.pair(JSON.stringify(goJSON("export", "--alias", NODE)));
+      const bundlePath = join(tmpdir(), `phone-bundle-x-${Date.now()}.json`);
+      writeFileSync(bundlePath, JSON.stringify(phone.identityBundle("phone")));
+      const alias = `xphone${Date.now() % 1_000_000}`;
+      go("pair", "--file", bundlePath, "--alias", alias);
+      go("grant", alias);
+      go("open", "bot", "--persistent", "--global", "--harness", "service");
+
+      const received: InboundMessage[] = [];
+      phone.onMessage((m) => void received.push(m));
+      phone.start();
+      await until(() => phone.connection === "online");
+      expect(phone.debug.stream).toBe("open");
+      // The broker directory lists the phone's app agent online (needs a live
+      // stream + fresh lease + online presence).
+      await until(() => {
+        const who = goJSON("who");
+        const list: { machine_id: string; alias: string; online: boolean }[] = Array.isArray(who) ? who : who.agents ?? who.who ?? [];
+        return list.find((p) => p.machine_id === phone.machineId && p.alias === "app" && p.online);
+      });
+      expect(phone.debug.presenceOnline).toBe(true);
+
+      const sent = goJSON("post", "--from", "bot", "--to", `${alias}:app`, "via xhr ✓");
+      const got = await until(() => received.find((m) => m.id === sent.id));
+      expect(got.body).toBe("via xhr ✓");
+      expect(got.peerAlias).toBe(peer.alias);
+      await until(() => goJSON("status", sent.id).state === "handed_off");
+      expect(phone.debug.envelopes).toBeGreaterThan(0);
+    } finally {
+      await phone.stop();
+      g.XMLHttpRequest = prev;
+    }
   }, 90_000);
 });

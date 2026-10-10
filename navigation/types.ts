@@ -1,4 +1,6 @@
 // Route params for the four tab stacks.
+import type { PagerPush, PagerRequest } from "../lib/pagerApi";
+
 export type AgentDetailParams = { machine: string; agent: string; /** back-link label */ from?: string };
 
 export type AgentsStackParamList = {
@@ -12,9 +14,8 @@ export type InboxStackParamList = {
   InboxItem: { machine: string; id: string };
   AgentDetail: AgentDetailParams;
   Senders: undefined;
-  PushDetail: { id: string };
-  PushList: undefined;
-  Requests: undefined;
+  /** Legacy pager-api item: a pending request (InboxOpenAsk) or a push (InboxOpenMsg). */
+  PagerItem: { request: PagerRequest } | { push: PagerPush };
 };
 
 export type MachinesStackParamList = {

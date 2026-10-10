@@ -1,5 +1,6 @@
 // Inbox (design: InboxK3). "Waiting on you" raised cards with a blue Answer
-// button, then the timeline by day: porter notifies + legacy pager-api pushes.
+// button (porter questions + pending pager-api requests, first 5 then "N more"),
+// then the timeline by day: porter notifies + legacy pager-api pushes.
 // Fixed 68px rows; colored icon per kind, no status dots; unread = bold white.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
@@ -9,7 +10,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { usePorter, usePorterState, useTick } from "../../porter/PorterProvider";
 import { filterInbox, formatClock, formatHM, groupByDay, notifyLook, resolutionText, senderParts, splitInbox } from "../../porter/selectors";
 import type { InboxItem } from "../../porter/store";
-import { fetchPendingRequests, fetchPushes, markAllPushesRead, pagerConfigured, setPushRead, type PagerPush } from "../../lib/pagerApi";
+import { fetchPendingRequests, fetchPushes, markAllPushesRead, pagerConfigured, setPushRead, type PagerPush, type PagerRequest } from "../../lib/pagerApi";
 import type { InboxStackParamList } from "../../navigation/types";
 import { Empty, LargeHeader, OfflineBanner, MenuSheet, Screen, T, type MenuOption } from "../../components/ui";
 import ConfirmModal from "../../components/ConfirmModal";
@@ -22,6 +23,8 @@ type Nav = NativeStackNavigationProp<InboxStackParamList>;
 type Entry = { kind: "porter"; at: number; item: InboxItem } | { kind: "pager"; at: number; push: PagerPush };
 
 const PAGER = "__pager__";
+const WAITING_CAP = 5;
+const PRIO = { high: 0, medium: 1, low: 2 } as const;
 
 export default function InboxScreen() {
   const nav = useNavigation<Nav>();
@@ -31,7 +34,8 @@ export default function InboxScreen() {
   const toast = useToast();
   const now = useTick(1000);
   const [pushes, setPushes] = useState<PagerPush[]>([]);
-  const [pendingRequests, setPendingRequests] = useState(0);
+  const [requests, setRequests] = useState<PagerRequest[]>([]);
+  const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [pagerError, setPagerError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [machineFilter, setMachineFilter] = useState<string | undefined>(route.params?.machine);
@@ -47,7 +51,7 @@ export default function InboxScreen() {
     try {
       const [p, r] = await Promise.all([fetchPushes(50), fetchPendingRequests()]);
       setPushes(p);
-      setPendingRequests(r.length);
+      setRequests(r);
       setPagerError("");
     } catch (e) {
       setPagerError(String(e));
@@ -96,7 +100,7 @@ export default function InboxScreen() {
   const unreadPorter = state.inbox.filter((i) => !i.read).length;
   const unreadPager = pagerOn ? pushes.filter((p) => !p.read).length : 0;
   const openQuestions = splitInbox(state.inbox, now).questions.length;
-  const attention = unreadPorter + unreadPager + (pagerOn ? pendingRequests : 0) + openQuestions;
+  const attention = unreadPorter + unreadPager + (pagerOn ? requests.length : 0) + openQuestions;
 
   useEffect(() => {
     nav.getParent()?.setOptions({ tabBarBadge: attention > 0 ? " " : undefined });
@@ -148,11 +152,18 @@ export default function InboxScreen() {
     { key: "all", label: "All senders", checked: !machineFilter && !agentFilter, onPress: () => { setMachineFilter(undefined); nav.setParams({ agent: undefined, machine: undefined }); } },
     ...machinesInInbox.map((m) => ({ key: m, label: nameOf(m), checked: machineFilter === m && !agentFilter, onPress: () => { setMachineFilter(m); nav.setParams({ agent: undefined }); } })),
     ...(pagerOn ? [{ key: PAGER, label: "Pager (legacy)", checked: machineFilter === PAGER, onPress: () => setMachineFilter(PAGER) }] : []),
-    ...(pagerOn ? [{ key: "log", label: "Pager log…", color: t.accent, onPress: () => nav.navigate("PushList") }] : []),
     ...(unreadPorter + unreadPager > 0 ? [{ key: "read", label: "Mark all read", color: t.accent, onPress: () => setConfirm(true) }] : []),
   ];
 
-  const waitingCount = questions.length + (showPager && pendingRequests > 0 ? 1 : 0);
+  const pagerWaiting = useMemo(
+    () => (showPager ? [...requests].sort((a, b) => (PRIO[a.priority] ?? 2) - (PRIO[b.priority] ?? 2) || b.created_at.localeCompare(a.created_at)) : []),
+    [requests, showPager]
+  );
+  const waitingCount = questions.length + pagerWaiting.length;
+  const waitingCap = showAllWaiting ? Infinity : WAITING_CAP;
+  const shownQuestions = questions.slice(0, waitingCap);
+  const shownRequests = pagerWaiting.slice(0, Math.max(0, waitingCap - shownQuestions.length));
+  const hiddenWaiting = waitingCount - shownQuestions.length - shownRequests.length;
 
   return (
     <Screen inbox>
@@ -177,7 +188,7 @@ export default function InboxScreen() {
         {waitingCount > 0 ? (
           <View>
             <SecH title="Waiting on you" count={waitingCount} />
-            {questions.map((q) => {
+            {shownQuestions.map((q) => {
               const sp = senderParts(q, nameOf(q.fromMachine));
               const exp = q.notify.expires_at ? Date.parse(q.notify.expires_at) : 0;
               const when = exp ? (exp - now < 3600_000 ? `${formatClock(exp - now)} left` : `until ${formatHM(exp)}`) : "";
@@ -197,16 +208,24 @@ export default function InboxScreen() {
                 </Pressable>
               );
             })}
-            {showPager && pendingRequests > 0 ? (
-              <Pressable onPress={() => nav.navigate("Requests")} style={({ pressed }) => [s.card, pressed && { opacity: 0.8 }]}>
-                <KindIcon look="question" />
+            {shownRequests.map((r) => (
+              <Pressable key={`r/${r.id}`} onPress={() => nav.navigate("PagerItem", { request: r })} style={({ pressed }) => [s.card, pressed && { opacity: 0.8 }]}>
+                <KindIcon look={r.priority === "high" ? "high" : "question"} />
                 <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                  <T size={15} weight="600" color={t.white} lines={1}>{`${pendingRequests} pending request${pendingRequests === 1 ? "" : "s"}`}</T>
-                  <T mono size={12} color="rgba(255,255,255,0.45)">pager-api · action cards</T>
+                  <T size={15} weight="600" color={t.white} lines={1}>{r.email_subject ?? r.summary}</T>
+                  <View style={{ flexDirection: "row", gap: 6, overflow: "hidden" }}>
+                    <T mono size={12} color="rgba(255,255,255,0.85)" lines={1} style={{ flexShrink: 1 }}>{r.email_sender ?? `pager:${r.type}`}</T>
+                    <T size={12} color={t.text3}>· {formatHM(Date.parse(r.created_at) || 0)}</T>
+                  </View>
                 </View>
                 <View style={s.answer}>
-                  <T size={14} weight="600" color={t.white}>Open</T>
+                  <T size={14} weight="600" color={t.white}>Answer</T>
                 </View>
+              </Pressable>
+            ))}
+            {hiddenWaiting > 0 || (showAllWaiting && waitingCount > WAITING_CAP) ? (
+              <Pressable onPress={() => setShowAllWaiting((v) => !v)} hitSlop={4} style={({ pressed }) => [s.more, pressed && { opacity: 0.6 }]}>
+                <T size={14} weight="600" color={t.accent}>{hiddenWaiting > 0 ? `${hiddenWaiting} more` : "Show less"}</T>
               </Pressable>
             ) : null}
           </View>
@@ -220,7 +239,7 @@ export default function InboxScreen() {
                 e.kind === "porter" ? (
                   <PorterRow key={`p/${e.item.fromMachine}/${e.item.id}`} item={e.item} machineName={nameOf(e.item.fromMachine)} now={now} onPress={() => openItem(e.item)} onLongPress={() => store?.updateInbox(e.item.id, e.item.fromMachine, (i) => ({ ...i, read: !i.read }))} />
                 ) : (
-                  <PagerRow key={`g/${e.push.id}`} push={e.push} onPress={() => nav.navigate("PushDetail", { id: e.push.id })} onLongPress={() => togglePagerRead(e.push)} />
+                  <PagerRow key={`g/${e.push.id}`} push={e.push} onPress={() => { setPushes((l) => l.map((x) => (x.id === e.push.id ? { ...x, read: 1 } : x))); nav.navigate("PagerItem", { push: e.push }); }} onLongPress={() => togglePagerRead(e.push)} />
                 )
               )}
             </View>
@@ -278,7 +297,8 @@ function PagerRow({ push, onPress, onLongPress }: { push: PagerPush; onPress: ()
   const read = !!push.read;
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [s.row, pressed && { backgroundColor: t.fill }]}>
-      <KindIcon look={push.category === "urgent" ? "high" : "message"} dim={read} />
+      {/* pager-api marks every push urgent, so the category isn't a priority signal. */}
+      <KindIcon look="message" dim={read} />
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
         <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
           <T size={15} weight={read ? "400" : "600"} color={read ? "rgba(255,255,255,0.65)" : t.white} lines={1} style={{ flex: 1 }}>
@@ -302,6 +322,7 @@ function PagerRow({ push, onPress, onLongPress }: { push: PagerPush; onPress: ()
 
 const s = StyleSheet.create({
   card: { flexDirection: "row", alignItems: "center", gap: 12, height: 68, backgroundColor: t.raised, borderRadius: 12, marginHorizontal: 12, marginBottom: 8, paddingHorizontal: 12 },
+  more: { minHeight: 44, marginHorizontal: 12, alignItems: "center", justifyContent: "center" },
   answer: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, backgroundColor: t.accent, justifyContent: "center" },
   list: { borderTopWidth: 1, borderTopColor: t.divider },
   row: { flexDirection: "row", alignItems: "center", gap: 12, height: 68, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: t.divider },

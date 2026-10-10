@@ -7,9 +7,6 @@ import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { Feather } from "@expo/vector-icons";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import PushListScreen from "./screens/PushListScreen";
-import PushDetailScreen from "./screens/PushDetailScreen";
-import RequestsScreen from "./screens/RequestsScreen";
 import LocationScreen from "./screens/location/LocationScreen";
 import ZonesScreen from "./screens/location/ZonesScreen";
 import AgentsScreen from "./screens/agents/AgentsScreen";
@@ -17,6 +14,7 @@ import AgentDetailScreen from "./screens/agents/AgentDetailScreen";
 import GraveyardScreen from "./screens/agents/GraveyardScreen";
 import InboxScreen from "./screens/inbox/InboxScreen";
 import InboxItemScreen from "./screens/inbox/InboxItemScreen";
+import PagerItemScreen from "./screens/inbox/PagerItemScreen";
 import MachinesScreen from "./screens/machines/MachinesScreen";
 import MachineDetailScreen from "./screens/machines/MachineDetailScreen";
 import PairScreen from "./screens/machines/PairScreen";
@@ -33,7 +31,7 @@ import Onboarding from "./screens/onboarding/Onboarding";
 import { ACTION } from "./porter/notify";
 import { handleNotificationAction } from "./porter/runtime";
 import NotificationSettingsScreen from "./screens/machines/NotificationSettingsScreen";
-import { colors, fonts, t } from "./theme";
+import { colors, t } from "./theme";
 
 const Tab = createBottomTabNavigator();
 const AgentsStack = createNativeStackNavigator<AgentsStackParamList>();
@@ -45,14 +43,6 @@ const stackOptions: NativeStackNavigationOptions = {
   headerShown: false,
   contentStyle: { backgroundColor: colors.bg },
 };
-const detailOptions = (title = ""): NativeStackNavigationOptions => ({
-  headerShown: true,
-  headerTitle: title,
-  headerStyle: { backgroundColor: t.bgInbox },
-  headerTintColor: colors.text,
-  headerTitleStyle: { fontFamily: fonts.mono, fontSize: 14 },
-});
-
 function AgentsTab() {
   return (
     <AgentsStack.Navigator screenOptions={stackOptions}>
@@ -70,9 +60,7 @@ function InboxTab() {
       <InboxStack.Screen name="InboxItem" component={InboxItemScreen} />
       <InboxStack.Screen name="AgentDetail" component={AgentDetailScreen} options={{ contentStyle: { backgroundColor: t.bg } }} />
       <InboxStack.Screen name="Senders" component={SendersScreen} options={{ contentStyle: { backgroundColor: t.bg } }} />
-      <InboxStack.Screen name="PushDetail" component={PushDetailScreen} options={detailOptions()} />
-      <InboxStack.Screen name="PushList" component={PushListScreen} />
-      <InboxStack.Screen name="Requests" component={RequestsScreen} />
+      <InboxStack.Screen name="PagerItem" component={PagerItemScreen} />
     </InboxStack.Navigator>
   );
 }
@@ -99,7 +87,7 @@ function MachinesTab() {
 }
 
 /** Routes notification taps (porter locals → agent / inbox item / machine group;
- * email-agent → Requests) and runs approval action buttons pressed while the app is up. */
+ * pager-api pushes → Inbox, where pending requests sit in "Waiting on you") and runs approval action buttons pressed while the app is up. */
 function useNotificationRouting() {
   useEffect(() => {
     const route = (data: Record<string, unknown> | undefined) => {
@@ -112,8 +100,6 @@ function useNotificationRouting() {
         } else if (data.kind === "group" && typeof data.machine === "string") {
           navigateTo("Inbox", "InboxList", { machine: data.machine });
         }
-      } else if (data.source === "email-agent") {
-        navigateTo("Inbox", "Requests");
       } else {
         navigateTo("Inbox", "InboxList");
       }

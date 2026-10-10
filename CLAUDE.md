@@ -21,7 +21,7 @@ Expo / React Native mobile app — the frontend of the Pager pair. Receives push
 - `screens/location/` — Day/Week/Month/Custom periods, by-place totals, timeline corrections, Zones (zone colors client-side)
 - `screens/machines/` — list, machine detail, Add a machine, Settings, Settings › Notifications
 - `screens/onboarding/` — first launch (only when no broker configured)
-- Legacy, reachable from Inbox: `PushListScreen` (Inbox menu › Pager log), `PushDetailScreen`, `RequestsScreen`
+- Legacy pager-api in Inbox: pending requests = "Waiting on you" questions, pushes = messages, both open in `screens/inbox/PagerItemScreen`. `PushListScreen`/`PushDetailScreen`/`RequestsScreen` are no longer routed (kept for reference; calls live in `lib/pagerApi.ts`)
 - Styling: tokens in `theme.ts` (`t`), primitives in `components/ui.tsx`
 - Dev mock data: Machines › Settings › Developer (dev builds only), `porter/mock.ts`
 

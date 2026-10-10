@@ -26,6 +26,9 @@ import { navigateTo, navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
 import { PorterProvider } from "./porter/PorterProvider";
+import { ACTION } from "./porter/notify";
+import { handleNotificationAction } from "./porter/runtime";
+import NotificationSettingsScreen from "./screens/machines/NotificationSettingsScreen";
 import { colors, fonts, t } from "./theme";
 
 const Tab = createBottomTabNavigator();
@@ -76,11 +79,13 @@ function MachinesTab() {
       <MachinesStack.Screen name="MachineDetail" component={MachineDetailScreen} />
       <MachinesStack.Screen name="Pair" component={PairScreen} />
       <MachinesStack.Screen name="Settings" component={MachinesSettingsScreen} />
+      <MachinesStack.Screen name="Notifications" component={NotificationSettingsScreen} />
     </MachinesStack.Navigator>
   );
 }
 
-/** Routes notification taps: porter locals → agent / inbox item; email-agent → Requests. */
+/** Routes notification taps (porter locals → agent / inbox item / machine group;
+ * email-agent → Requests) and runs approval action buttons pressed while the app is up. */
 function useNotificationRouting() {
   useEffect(() => {
     const route = (data: Record<string, unknown> | undefined) => {
@@ -90,6 +95,8 @@ function useNotificationRouting() {
           navigateTo("Agents", "AgentDetail", { machine: data.machine, agent: data.agent });
         } else if (data.kind === "notify" && typeof data.machine === "string" && typeof data.id === "string") {
           navigateTo("Inbox", "InboxItem", { machine: data.machine, id: data.id });
+        } else if (data.kind === "group" && typeof data.machine === "string") {
+          navigateTo("Inbox", "InboxList", { machine: data.machine });
         }
       } else if (data.source === "email-agent") {
         navigateTo("Inbox", "Requests");
@@ -97,13 +104,22 @@ function useNotificationRouting() {
         navigateTo("Inbox", "InboxList");
       }
     };
-    const sub = Notifications.addNotificationResponseReceivedListener((r) =>
-      route(r.notification.request.content.data as Record<string, unknown>)
-    );
+    const onResponse = (r: Notifications.NotificationResponse) => {
+      const data = r.notification.request.content.data as Record<string, unknown>;
+      const a = r.actionIdentifier;
+      if (a === ACTION.allow || a === ACTION.deny || a === ACTION.once) {
+        void handleNotificationAction(a, data as never).catch(() => undefined);
+        return;
+      }
+      route(data);
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener(onResponse);
     // Cold start from a tap.
     Notifications.getLastNotificationResponseAsync()
       .then((r) => {
-        if (r) setTimeout(() => route(r.notification.request.content.data as Record<string, unknown>), 300);
+        if (r && (r.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || r.actionIdentifier === ACTION.more)) {
+          setTimeout(() => route(r.notification.request.content.data as Record<string, unknown>), 300);
+        }
       })
       .catch(() => undefined);
     return () => sub.remove();

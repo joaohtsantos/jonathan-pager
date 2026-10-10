@@ -22,4 +22,5 @@ export type MachinesStackParamList = {
   MachineDetail: { machine: string };
   Pair: undefined;
   Settings: undefined;
+  Notifications: undefined;
 };

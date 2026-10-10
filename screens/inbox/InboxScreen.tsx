@@ -15,6 +15,7 @@ import { Empty, LargeHeader, MenuSheet, Screen, T, type MenuOption } from "../..
 import ConfirmModal from "../../components/ConfirmModal";
 import { useToast } from "../../components/Toast";
 import { KindIcon, Sender } from "./inboxLook";
+import { clearGroups } from "../../porter/notify";
 import { t } from "../../theme";
 
 type Nav = NativeStackNavigationProp<InboxStackParamList>;
@@ -56,6 +57,7 @@ export default function InboxScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadPager();
+      void clearGroups().catch(() => undefined);
     }, [loadPager])
   );
 

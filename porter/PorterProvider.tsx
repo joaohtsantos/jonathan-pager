@@ -212,7 +212,7 @@ export function PorterProvider({ children }: { children: ReactNode }) {
     }
     if (!rt) return NO_ACTIONS;
     return {
-      answer: (item, choice, text) => rt.porter.answer(item, choice, text),
+      answer: async (item, choice, text) => void (await rt.porter.answer(item, choice, text)),
       dismiss: (item) => rt.store.updateInbox(item.id, item.fromMachine, (i) => ({ ...i, read: true, cancelled: { resolution: "dismissed", at: Date.now() } })),
       setSpecial: (machineId, agentId, special) => rt.porter.setSpecial(machineId, agentId, special),
       revokeTrust: (machineId, trustId) => rt.porter.revokeTrust(machineId, trustId),

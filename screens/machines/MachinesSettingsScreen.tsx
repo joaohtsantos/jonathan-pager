@@ -6,8 +6,10 @@ import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import * as Location from "expo-location";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { MachinesStackParamList } from "../../navigation/types";
 import { usePorter } from "../../porter/PorterProvider";
-import { BackHeader, BigButton, Input, KVRow, List, PageTitle, Screen, SectionHeader, Sheet, T, TextBtn, Toggle } from "../../components/ui";
+import { BackHeader, BigButton, Chevron, Input, KVRow, List, PageTitle, Screen, SectionHeader, Sheet, T, TextBtn, Toggle } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { useToken } from "../../tokenContext";
 import { useLocation } from "../../locationContext";
@@ -17,7 +19,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const short = (s: string, head = 6, tail = 4) => (s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s);
 
 export default function MachinesSettingsScreen() {
-  const nav = useNavigation();
+  const nav = useNavigation<NativeStackNavigationProp<MachinesStackParamList>>();
   const { rt, connection, connectionError, refreshNode, mock, setMock } = usePorter();
   const { token, error: tokenError } = useToken();
   const loc = useLocation();
@@ -99,6 +101,13 @@ export default function MachinesSettingsScreen() {
             />
           </List>
           {connectionError && connection !== "online" ? <T size={12} color={t.faint} style={{ marginHorizontal: 20, marginTop: 6 }}>{connectionError}</T> : null}
+        </View>
+
+        <View>
+          <SectionHeader size={15}>Notifications</SectionHeader>
+          <List>
+            <KVRow label="Kinds and sounds" value="5 kinds" right={<Chevron />} onPress={() => nav.navigate("Notifications")} />
+          </List>
         </View>
 
         <View>

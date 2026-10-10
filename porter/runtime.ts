@@ -4,7 +4,7 @@ import { CommsNode } from "../comms/node";
 import { asyncKV, installPRNG, secureSecrets } from "../comms/rn";
 import { PorterClient } from "./client";
 import { PorterStore } from "./store";
-import { presentAgentPush, presentNotify } from "./notify";
+import { ACTION, dismissNotify, presentAgentPush, presentNotify, presentSendFailed, type LocalNotificationData } from "./notify";
 import { extractPorterData, openPorterPush } from "./push";
 
 export interface Runtime {
@@ -24,6 +24,7 @@ export function getRuntime(): Promise<Runtime> {
       await store.load();
       const porter = new PorterClient(node, store, {
         onNotify: (item) => void presentNotify(store, item).catch(() => undefined),
+        onResolved: (machine, id) => void dismissNotify(machine, id),
       });
       porter.attach();
       return { node, store, porter };
@@ -61,6 +62,42 @@ export async function handlePorterPush(payload: unknown): Promise<boolean> {
     // Too large for a push: fetch it from the broker queue; the comms path
     // ingests and presents it.
     if (!node.isRunning) await node.drain({ quietMs: 1500, maxMs: 8000 }).catch(() => undefined);
+  }
+  return true;
+}
+
+/**
+ * An action button on an approval notification (Allow / Deny / Allow once),
+ * pressed without opening the app: answer over comms from here. Returns false
+ * when the response is not one of ours (taps, "More…").
+ */
+export async function handleNotificationAction(actionId: string, data: Partial<LocalNotificationData> | undefined): Promise<boolean> {
+  if (!data || data.porterLocal !== "1" || data.kind !== "notify" || !data.machine || !data.id) return false;
+  if (actionId !== ACTION.allow && actionId !== ACTION.deny && actionId !== ACTION.once) return false;
+  const { node, store, porter } = await getRuntime();
+  await store.reload();
+  const item = store.getSnapshot().inbox.find((i) => i.id === data.id && i.fromMachine === data.machine);
+  const ask = item?.notify.ask ?? [];
+  const pick =
+    actionId === ACTION.deny
+      ? ask.find((c) => /^deny/i.test(c)) ?? "Deny"
+      : actionId === ACTION.once
+        ? ask.find((c) => /once/i.test(c)) ?? "Once"
+        : ask.find((c) => /^allow/i.test(c)) ?? "Allow";
+  await dismissNotify(data.machine, data.id);
+  if (!item) {
+    await presentSendFailed(data.machine, data.id, pick, "question not found on this phone");
+    return true;
+  }
+  if (item.answer?.state === "sent" || item.cancelled) return true;
+  try {
+    const msgId = await porter.answer(item, pick);
+    // send() queues on network errors instead of throwing: a queued answer
+    // did not reach the broker yet.
+    const st = await node.sentState(msgId);
+    if (!st || st === "queued" || st === "failed") await presentSendFailed(data.machine, data.id, pick, "no connection — queued");
+  } catch (e) {
+    await presentSendFailed(data.machine, data.id, pick, e instanceof Error ? e.message : String(e));
   }
   return true;
 }

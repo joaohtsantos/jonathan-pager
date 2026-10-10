@@ -10,6 +10,8 @@ type LooseMsg = { type: string; [k: string]: any };
 export interface PorterEvents {
   /** A notify arrived over comms (new). Used to present a local notification. */
   onNotify?: (item: InboxItem) => void;
+  /** A question was answered from here or resolved elsewhere (dismiss its notification). */
+  onResolved?: (machine: string, id: string) => void;
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -85,7 +87,7 @@ export class PorterClient {
    * reply) is a proposed extension, not in contract v1; porter ignores it until
    * then.
    */
-  async answer(item: InboxItem, choice: string, text?: string): Promise<void> {
+  async answer(item: InboxItem, choice: string, text?: string): Promise<string> {
     await this.store.updateInbox(item.id, item.fromMachine, (i) => ({
       ...i,
       read: true,
@@ -95,8 +97,10 @@ export class PorterClient {
       // Answers go to the exact carrier (`<machine>:porter`), which forwards
       // to the asking agent. Seen only via push: address porter by alias.
       const to = item.fromAgent ?? PORTER_ALIAS;
-      await this.node.send(item.fromMachine, to, JSON.stringify({ type: "porter.answer", v: 1, id: item.id, choice, ...(text !== undefined ? { text } : {}) }));
+      const msgId = await this.node.send(item.fromMachine, to, JSON.stringify({ type: "porter.answer", v: 1, id: item.id, choice, ...(text !== undefined ? { text } : {}) }));
       await this.store.updateInbox(item.id, item.fromMachine, (i) => ({ ...i, answer: { ...i.answer!, state: "sent" } }));
+      this.events.onResolved?.(item.fromMachine, item.id);
+      return msgId;
     } catch (e) {
       await this.store.updateInbox(item.id, item.fromMachine, (i) => ({
         ...i,
@@ -194,6 +198,7 @@ export class PorterClient {
 
       case "porter.cancel":
         if (typeof msg.id !== "string") return;
+        this.events.onResolved?.(from, msg.id);
         return this.store.updateInbox(msg.id, from, (i) =>
           i.answer?.state === "sent" ? i : { ...i, cancelled: { resolution: msg.resolution ?? "answered", at: Date.now() } }
         );

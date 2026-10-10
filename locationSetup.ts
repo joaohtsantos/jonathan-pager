@@ -109,6 +109,11 @@ export const locationApi = {
       `/location/timeline?${qs.toString()}`
     );
   },
+  // Range mode: all segments in [from, to], chronological.
+  timelineRange: (from: string, to: string) => {
+    const qs = new URLSearchParams({ from, to });
+    return apiFetch<{ from: string; to: string; segments: TimelineSegment[] }>(`/location/timeline?${qs.toString()}`);
+  },
   // Retcon a time span to a zone ({zone_id}), Unknown ({kind:"unknown"}), or
   // transit ({kind:"transit"}).
   createOverride: (from: string, to: string, target: { zone_id?: string | null; kind?: "unknown" | "transit" }) =>
@@ -274,7 +279,7 @@ export async function startBackgroundLocation(): Promise<void> {
     deferredUpdatesInterval: 15 * 60 * 1000,
     showsBackgroundLocationIndicator: false,
     foregroundService: {
-      notificationTitle: "Pager — location",
+      notificationTitle: "Monitor — location",
       notificationBody: "Tracking your zone presence",
       notificationColor: "#C2410C",
     },

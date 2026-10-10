@@ -1,5 +1,6 @@
 // Shared inbox presentation: kind → icon/color/label, sender line.
 import { View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import type { NotifyLook } from "../../porter/selectors";
 import { IconTile, T, type FeatherName } from "../../components/ui";
 import { t } from "../../theme";
@@ -31,6 +32,19 @@ export function Sender({ machine, agent, read, size = 12 }: { machine: string; a
           :{agent}
         </T>
       ) : null}
+    </View>
+  );
+}
+
+/** Round selection checkbox shown left of rows in selection mode. */
+export function SelectCircle({ on }: { on: boolean }) {
+  return (
+    <View
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: on }}
+      style={{ width: 22, height: 22, borderRadius: 11, borderWidth: on ? 0 : 1.5, borderColor: t.faint, backgroundColor: on ? t.accent : "transparent", alignItems: "center", justifyContent: "center" }}
+    >
+      {on ? <Feather name="check" size={14} color={t.white} /> : null}
     </View>
   );
 }

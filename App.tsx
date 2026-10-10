@@ -17,13 +17,16 @@ import InboxScreen from "./screens/inbox/InboxScreen";
 import InboxItemScreen from "./screens/inbox/InboxItemScreen";
 import MachinesScreen from "./screens/machines/MachinesScreen";
 import MachineDetailScreen from "./screens/machines/MachineDetailScreen";
+import PairScreen from "./screens/machines/PairScreen";
+import MachinesSettingsScreen from "./screens/machines/MachinesSettingsScreen";
+import SendersScreen from "./screens/inbox/SendersScreen";
 import type { AgentsStackParamList, InboxStackParamList, MachinesStackParamList } from "./navigation/types";
 import { TokenProvider } from "./tokenContext";
 import { navigateTo, navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
 import { ToastProvider } from "./components/Toast";
 import { PorterProvider } from "./porter/PorterProvider";
-import { colors, fonts } from "./theme";
+import { colors, fonts, t } from "./theme";
 
 const Tab = createBottomTabNavigator();
 const AgentsStack = createNativeStackNavigator<AgentsStackParamList>();
@@ -37,7 +40,7 @@ const stackOptions: NativeStackNavigationOptions = {
 const detailOptions = (title = ""): NativeStackNavigationOptions => ({
   headerShown: true,
   headerTitle: title,
-  headerStyle: { backgroundColor: colors.surface },
+  headerStyle: { backgroundColor: t.bgInbox },
   headerTintColor: colors.text,
   headerTitleStyle: { fontFamily: fonts.mono, fontSize: 14 },
 });
@@ -46,17 +49,19 @@ function AgentsTab() {
   return (
     <AgentsStack.Navigator screenOptions={stackOptions}>
       <AgentsStack.Screen name="AgentsList" component={AgentsScreen} />
-      <AgentsStack.Screen name="AgentDetail" component={AgentDetailScreen} options={detailOptions("AGENT")} />
-      <AgentsStack.Screen name="Graveyard" component={GraveyardScreen} options={detailOptions("GRAVEYARD")} />
+      <AgentsStack.Screen name="AgentDetail" component={AgentDetailScreen} />
+      <AgentsStack.Screen name="Graveyard" component={GraveyardScreen} />
     </AgentsStack.Navigator>
   );
 }
 
 function InboxTab() {
   return (
-    <InboxStack.Navigator screenOptions={stackOptions}>
+    <InboxStack.Navigator screenOptions={{ ...stackOptions, contentStyle: { backgroundColor: t.bgInbox } }}>
       <InboxStack.Screen name="InboxList" component={InboxScreen} />
-      <InboxStack.Screen name="InboxItem" component={InboxItemScreen} options={detailOptions()} />
+      <InboxStack.Screen name="InboxItem" component={InboxItemScreen} />
+      <InboxStack.Screen name="AgentDetail" component={AgentDetailScreen} options={{ contentStyle: { backgroundColor: t.bg } }} />
+      <InboxStack.Screen name="Senders" component={SendersScreen} options={{ contentStyle: { backgroundColor: t.bg } }} />
       <InboxStack.Screen name="PushDetail" component={PushDetailScreen} options={detailOptions()} />
       <InboxStack.Screen name="PushList" component={PushListScreen} />
       <InboxStack.Screen name="Requests" component={RequestsScreen} />
@@ -68,7 +73,9 @@ function MachinesTab() {
   return (
     <MachinesStack.Navigator screenOptions={stackOptions}>
       <MachinesStack.Screen name="MachinesList" component={MachinesScreen} />
-      <MachinesStack.Screen name="MachineDetail" component={MachineDetailScreen} options={detailOptions("MACHINE")} />
+      <MachinesStack.Screen name="MachineDetail" component={MachineDetailScreen} />
+      <MachinesStack.Screen name="Pair" component={PairScreen} />
+      <MachinesStack.Screen name="Settings" component={MachinesSettingsScreen} />
     </MachinesStack.Navigator>
   );
 }
@@ -105,72 +112,38 @@ function useNotificationRouting() {
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
-  const barHeight = 56 + insets.bottom;
   useNotificationRouting();
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarShowLabel: false,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
+          backgroundColor: t.tabBar,
+          borderTopColor: "rgba(255,255,255,0.07)",
           borderTopWidth: 1,
-          height: barHeight,
-          paddingTop: 0,
-          paddingBottom: insets.bottom,
+          height: 60 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: insets.bottom + 6,
         },
-        tabBarItemStyle: {
-          paddingTop: 0,
-          paddingBottom: 0,
-        },
-        tabBarIconStyle: {
-          flex: 1,
-          alignSelf: "center",
-        },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textFaint,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: "600", marginTop: 1 },
+        tabBarActiveTintColor: t.accent,
+        tabBarInactiveTintColor: "rgba(255,255,255,0.4)",
+        sceneStyle: { backgroundColor: t.bg },
       }}
     >
-      <Tab.Screen
-        name="Agents"
-        component={AgentsTab}
-        options={{
-          tabBarIcon: ({ color, size }) => <Feather name="cpu" size={size} color={color} />,
-        }}
-      />
+      <Tab.Screen name="Agents" component={AgentsTab} options={{ tabBarIcon: ({ color }) => <Feather name="menu" size={22} color={color} /> }} />
       <Tab.Screen
         name="Inbox"
         component={InboxTab}
         options={{
-          tabBarIcon: ({ color, size }) => <Feather name="bell" size={size} color={color} />,
-          tabBarBadgeStyle: {
-            backgroundColor: "transparent",
-            color: colors.accent,
-            fontFamily: fonts.mono,
-            fontSize: 12,
-            fontWeight: "700",
-            minWidth: 0,
-            paddingHorizontal: 0,
-            borderWidth: 0,
-          },
+          tabBarIcon: ({ color }) => <Feather name="inbox" size={22} color={color} />,
+          // Dot, not a count: set by InboxScreen when something is unread or waiting.
+          tabBarBadgeStyle: { backgroundColor: t.needs, minWidth: 8, maxHeight: 8, height: 8, borderRadius: 4, fontSize: 1, lineHeight: 8, color: "transparent", top: 2 },
         }}
       />
-      <Tab.Screen
-        name="Location"
-        component={LocationScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Feather name="map-pin" size={size} color={color} />,
-        }}
-      />
-      <Tab.Screen
-        name="Machines"
-        component={MachinesTab}
-        options={{
-          tabBarIcon: ({ color, size }) => <Feather name="server" size={size} color={color} />,
-        }}
-      />
+      <Tab.Screen name="Location" component={LocationScreen} options={{ tabBarIcon: ({ color }) => <Feather name="map-pin" size={22} color={color} /> }} />
+      <Tab.Screen name="Machines" component={MachinesTab} options={{ tabBarIcon: ({ color }) => <Feather name="server" size={22} color={color} /> }} />
     </Tab.Navigator>
   );
 }

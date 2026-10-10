@@ -1,168 +1,87 @@
-// Paired machines + comms setup (identity, broker, pairing), then the old
-// Settings content.
-import { useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
-import * as Clipboard from "expo-clipboard";
+// Machines tab (design: MachinesA): one row per paired machine; "+" pairs a
+// new one, the gear opens Settings.
+import { Pressable, ScrollView, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Feather } from "@expo/vector-icons";
 import { usePorter, usePorterState, useTick } from "../../porter/PorterProvider";
-import { formatAgo, formatDuration } from "../../porter/selectors";
+import { formatHM, livenessText, machineLiveness } from "../../porter/selectors";
 import type { MachineState } from "../../porter/store";
 import type { MachinesStackParamList } from "../../navigation/types";
-import { Badge, Block, Btn, Field, KV, Mono, ScreenHeader, ui } from "../../components/ui";
-import { SettingsSections } from "../SettingsScreen";
-import { useToast } from "../../components/Toast";
-import { useToken } from "../../tokenContext";
-import { colors, spacing } from "../../theme";
+import { Chevron, Empty, LargeHeader, Screen, T } from "../../components/ui";
+import { t } from "../../theme";
 
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** Paired machines (or the mock ones) with whatever porter state we have. */
+export function useMachineList(): MachineState[] {
+  const { rt, mock } = usePorter();
+  const state = usePorterState();
+  if (mock) return Object.values(state.machines);
+  return (rt?.node.peers() ?? []).map((p) => state.machines[p.machine_id] ?? { machineId: p.machine_id, name: p.alias, agents: {}, trusts: {} }).map((m) => ({ ...m, name: m.name ?? rt?.node.peer(m.machineId)?.alias }));
+}
 
-export function statusLine(m?: MachineState): string {
-  const st = m?.status;
-  if (!st) return "no status yet";
+export function liveAgentCount(m: MachineState) {
+  const live = Object.values(m.agents).filter((a) => a.status !== "ended");
+  return { live: live.length, running: m.status?.agents_running ?? live.filter((a) => a.status === "running").length };
+}
+
+function summary(m: MachineState, online: boolean, seenAt: number): string {
+  const st = m.status;
+  const c = liveAgentCount(m);
   const parts = [
-    st.load !== undefined ? `load ${st.load.toFixed(2)}` : "",
-    st.mem_pct !== undefined ? `mem ${Math.round(st.mem_pct)}%` : "",
-    st.disk_pct !== undefined ? `disk ${Math.round(st.disk_pct)}%` : "",
-    st.temp_c !== undefined ? `${st.temp_c.toFixed(0)}°C` : "",
-    st.battery_pct !== undefined ? `bat ${Math.round(st.battery_pct)}%` : "",
-    st.uptime_s !== undefined ? `up ${formatDuration(st.uptime_s * 1000)}` : "",
-  ].filter(Boolean);
-  return parts.join(" · ") || "status received";
+    online ? `${c.running} agent${c.running === 1 ? "" : "s"} running` : `${c.live} agent${c.live === 1 ? "" : "s"}`,
+    st?.battery_pct !== undefined ? `battery ${Math.round(st.battery_pct)}%` : "",
+    online && st?.disk_pct !== undefined ? `disk ${Math.round(st.disk_pct)}%` : "",
+    online && st?.temp_c !== undefined ? `${Math.round(st.temp_c)}°C` : "",
+    !online && seenAt ? `last update ${formatHM(seenAt)}` : "",
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 export default function MachinesScreen() {
   const nav = useNavigation<NativeStackNavigationProp<MachinesStackParamList>>();
-  const { rt, bootError, connection, connectionError, refreshNode, version } = usePorter();
-  const { token } = useToken();
-  const state = usePorterState();
-  const toast = useToast();
+  const { presence, bootError } = usePorter();
   const now = useTick(15_000);
-  const node = rt?.node;
-
-  const [brokerURL, setBrokerURL] = useState<string | null>(null);
-  const [serviceKey, setServiceKey] = useState("");
-  const [bundle, setBundle] = useState("");
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  void version;
-
-  const copyIdentity = async () => {
-    if (!node) return;
-    await Clipboard.setStringAsync(JSON.stringify(node.identityBundle("phone")));
-    if (Platform.OS !== "android") toast.show("IDENTITY COPIED");
-  };
-
-  const saveBroker = async () => {
-    if (!node) return;
-    setBusy("broker");
-    setError("");
-    try {
-      await node.configureBroker((brokerURL ?? node.brokerURL).trim(), serviceKey ? serviceKey : undefined);
-      setServiceKey("");
-      setBrokerURL(null);
-      refreshNode();
-      node.start();
-      toast.show("BROKER OK");
-      await rt?.porter.subscribeAll(token).catch(() => undefined);
-    } catch (e) {
-      setError(`broker: ${errText(e)}`);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const pair = async () => {
-    if (!node) return;
-    setBusy("pair");
-    setError("");
-    try {
-      const peer = await node.pair(bundle);
-      setBundle("");
-      refreshNode();
-      toast.show(`PAIRED ${peer.alias.toUpperCase()}`);
-      // porter may not be visible until the machine pairs + grants us back.
-      await rt?.porter.subscribe(peer.machine_id, token).catch((e) => setError(`subscribe: ${errText(e)}`));
-    } catch (e) {
-      setError(`pair: ${errText(e)}`);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const peers = node?.peers() ?? [];
+  const machines = useMachineList();
 
   return (
-    <View style={ui.screen}>
-      <ScreenHeader title="MACHINES" status={`${peers.length} PAIRED · COMMS ${connection.toUpperCase()}`} />
-      <ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
-        {bootError ? <Mono style={ui.error}>comms failed to start: {bootError}</Mono> : null}
-        {error ? (
-          <Block accent={colors.urgent}>
-            <Mono size={11} style={{ color: colors.urgent }} selectable>{error}</Mono>
-          </Block>
-        ) : null}
-
-        {/* PAIRED MACHINES */}
-        {peers.map((p) => {
-          const m = state.machines[p.machine_id];
-          const sub = m?.subscribed;
-          const agents = m ? Object.values(m.agents).filter((a) => a.status !== "ended") : [];
-          const needs = agents.filter((a) => a.status === "needs_you").length;
-          return (
-            <Pressable key={p.machine_id} onPress={() => nav.navigate("MachineDetail", { machine: p.machine_id })}>
-              <Block accent={needs ? colors.urgent : sub ? colors.accent : colors.border}>
-                <View style={ui.row}>
-                  <Mono bold>{(m?.name ?? p.alias).toUpperCase()}</Mono>
-                  <Mono size={10} faint>{m?.lastMessageAt ? formatAgo(m.lastMessageAt, now) : "never heard"}</Mono>
-                </View>
-                <View style={[ui.rowGap, { marginTop: 6 }]}>
-                  {sub?.approver ? <Badge label="APPROVER" color={colors.accent} /> : null}
-                  {sub?.push ? <Badge label="PUSH" color={colors.accent} /> : sub ? <Badge label="NO PUSH" /> : null}
-                  {!sub ? <Badge label={m?.subscribeSentAt ? "SUBSCRIBE SENT" : "NOT SUBSCRIBED"} /> : null}
-                  {sub?.refused?.length ? <Badge label={`REFUSED ${sub.refused.join(",")}`} /> : null}
-                  <Mono size={10} faint>{agents.length} agents{needs ? ` · ${needs} need you` : ""}</Mono>
-                </View>
-                <Mono size={11} dim style={{ marginTop: 6 }}>{statusLine(m)}</Mono>
-                {m?.subscribeError ? <Mono size={10} style={{ color: colors.urgent, marginTop: 4 }}>{m.subscribeError}</Mono> : null}
-              </Block>
+    <Screen>
+      <LargeHeader
+        title="Machines"
+        right={
+          <View style={{ flexDirection: "row" }}>
+            <Pressable accessibilityLabel="Add a machine" onPress={() => nav.navigate("Pair")} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+              <Feather name="plus" size={24} color={t.accent} />
             </Pressable>
-          );
-        })}
-
-        {/* PAIR */}
-        <Block title="PAIR A MACHINE">
-          <Mono size={11} faint>
-            On the machine run `comms export` and paste its JSON here. Then give it this phone's identity (below): `comms pair --file phone.json --alias phone` (or `--stdin`) and `comms grant phone`.
-          </Mono>
-          <Field value={bundle} onChangeText={setBundle} placeholder='{"machine_id":"m_…","public_key":"…","alias":"pi"}' multiline style={{ minHeight: 60, textAlignVertical: "top" }} />
-          <Btn label={busy === "pair" ? "PAIRING…" : "PAIR"} onPress={pair} disabled={!node || !bundle.trim() || !!busy} />
-        </Block>
-
-        {/* IDENTITY */}
-        <Block title="THIS PHONE" right={<Btn small label="COPY IDENTITY" onPress={copyIdentity} disabled={!node} />}>
-          <KV label="MACHINE ID" value={node?.machineId ?? "…"} />
-          <KV label="PUBLIC KEY" value={node?.identityBundle().public_key ?? "…"} />
-          <KV label="AGENT" value={node ? `app (${node.agentId})` : "…"} />
-        </Block>
-
-        {/* BROKER */}
-        <Block title="BROKER" right={<Badge label={connection.toUpperCase()} color={connection === "online" ? colors.accent : colors.borderBright} />}>
-          <Field label="URL" value={brokerURL ?? node?.brokerURL ?? ""} onChangeText={setBrokerURL} placeholder="https://comms.example.com" keyboardType="url" />
-          <Field
-            label="SERVICE KEY"
-            value={serviceKey}
-            onChangeText={setServiceKey}
-            placeholder={node?.hasServiceKey ? "•••••• stored (leave blank to keep)" : "paste broker service key"}
-            secureTextEntry
-          />
-          <Btn label={busy === "broker" ? "TESTING…" : "SAVE & CONNECT"} onPress={saveBroker} disabled={!node || !!busy || !(brokerURL ?? node?.brokerURL)} />
-          {connectionError && connection !== "online" ? <Mono size={10} faint style={{ marginTop: spacing.sm }}>{connectionError}</Mono> : null}
-        </Block>
-
-        <Mono size={10} faint bold style={{ letterSpacing: 2, marginVertical: spacing.md }}>APP SETTINGS</Mono>
-        <SettingsSections />
+            <Pressable accessibilityLabel="Settings" onPress={() => nav.navigate("Settings")} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+              <Feather name="settings" size={21} color={t.accent} />
+            </Pressable>
+          </View>
+        }
+      />
+      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+        {bootError ? <T size={12} color={t.danger} style={{ marginHorizontal: 20, marginBottom: 12 }}>comms failed to start: {bootError}</T> : null}
+        {machines.length === 0 ? (
+          <Empty title="No machines yet" hint="Tap + to pair one. It needs comms with porter enabled." />
+        ) : (
+          <View style={{ borderTopWidth: 1, borderTopColor: t.divider }}>
+            {machines.map((m) => {
+              const l = machineLiveness(m, presence, now);
+              return (
+                <Pressable key={m.machineId} onPress={() => nav.navigate("MachineDetail", { machine: m.machineId })} style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 64, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: t.divider }, pressed && { backgroundColor: t.fill }]}>
+                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+                      <T mono size={16} weight="600" color={l.online ? t.white : t.text3}>{m.name ?? m.machineId.slice(0, 10)}</T>
+                      <T size={12} weight="500" color={t.text3}>{livenessText(l)}</T>
+                    </View>
+                    <T size={13} color="rgba(255,255,255,0.6)" lines={1}>{summary(m, l.online, l.seenAt)}</T>
+                  </View>
+                  <Chevron />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }

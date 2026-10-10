@@ -9,7 +9,8 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import PushListScreen from "./screens/PushListScreen";
 import PushDetailScreen from "./screens/PushDetailScreen";
 import RequestsScreen from "./screens/RequestsScreen";
-import LocationScreen from "./screens/LocationScreen";
+import LocationScreen from "./screens/location/LocationScreen";
+import ZonesScreen from "./screens/location/ZonesScreen";
 import AgentsScreen from "./screens/agents/AgentsScreen";
 import AgentDetailScreen from "./screens/agents/AgentDetailScreen";
 import GraveyardScreen from "./screens/agents/GraveyardScreen";
@@ -20,7 +21,7 @@ import MachineDetailScreen from "./screens/machines/MachineDetailScreen";
 import PairScreen from "./screens/machines/PairScreen";
 import MachinesSettingsScreen from "./screens/machines/MachinesSettingsScreen";
 import SendersScreen from "./screens/inbox/SendersScreen";
-import type { AgentsStackParamList, InboxStackParamList, MachinesStackParamList } from "./navigation/types";
+import type { AgentsStackParamList, InboxStackParamList, LocationStackParamList, MachinesStackParamList } from "./navigation/types";
 import { TokenProvider } from "./tokenContext";
 import { navigateTo, navigationRef } from "./navigationRef";
 import { LocationProvider } from "./locationContext";
@@ -35,6 +36,7 @@ const Tab = createBottomTabNavigator();
 const AgentsStack = createNativeStackNavigator<AgentsStackParamList>();
 const InboxStack = createNativeStackNavigator<InboxStackParamList>();
 const MachinesStack = createNativeStackNavigator<MachinesStackParamList>();
+const LocationStack = createNativeStackNavigator<LocationStackParamList>();
 
 const stackOptions: NativeStackNavigationOptions = {
   headerShown: false,
@@ -69,6 +71,15 @@ function InboxTab() {
       <InboxStack.Screen name="PushList" component={PushListScreen} />
       <InboxStack.Screen name="Requests" component={RequestsScreen} />
     </InboxStack.Navigator>
+  );
+}
+
+function LocationTab() {
+  return (
+    <LocationStack.Navigator screenOptions={stackOptions}>
+      <LocationStack.Screen name="LocationMain" component={LocationScreen} />
+      <LocationStack.Screen name="Zones" component={ZonesScreen} />
+    </LocationStack.Navigator>
   );
 }
 
@@ -158,7 +169,7 @@ function MainTabs() {
           tabBarBadgeStyle: { backgroundColor: t.needs, minWidth: 8, maxHeight: 8, height: 8, borderRadius: 4, fontSize: 1, lineHeight: 8, color: "transparent", top: 2 },
         }}
       />
-      <Tab.Screen name="Location" component={LocationScreen} options={{ tabBarIcon: ({ color }) => <Feather name="map-pin" size={22} color={color} /> }} />
+      <Tab.Screen name="Location" component={LocationTab} options={{ tabBarIcon: ({ color }) => <Feather name="map-pin" size={22} color={color} /> }} />
       <Tab.Screen name="Machines" component={MachinesTab} options={{ tabBarIcon: ({ color }) => <Feather name="server" size={22} color={color} /> }} />
     </Tab.Navigator>
   );

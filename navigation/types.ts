@@ -24,3 +24,8 @@ export type MachinesStackParamList = {
   Settings: undefined;
   Notifications: undefined;
 };
+
+export type LocationStackParamList = {
+  LocationMain: undefined;
+  Zones: undefined;
+};

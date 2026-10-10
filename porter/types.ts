@@ -5,7 +5,8 @@ export const PORTER_ALIAS = "porter";
 export const TOPICS = ["agents", "status", "trusts"] as const;
 export type Topic = (typeof TOPICS)[number];
 
-export type AgentStatus = "running" | "needs_you" | "done" | "ended";
+/** away = running but silent > 60s; error = last turn ended on an API error (both newer porter; optional). */
+export type AgentStatus = "running" | "needs_you" | "done" | "ended" | "away" | "error";
 
 export interface Agent {
   id: string;
@@ -25,6 +26,8 @@ export interface Agent {
   running_ms?: number;
   waiting_ms?: number;
   ended_at?: string;
+  /** With status "error": what failed, e.g. { kind: "overloaded" }. */
+  error?: { kind?: string };
   end_reason?: "closed" | "stale" | string;
   // ---- Proposed, not in contract v1 yet (pending João's approval). Optional;
   // the UI renders without them.

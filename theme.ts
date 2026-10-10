@@ -25,6 +25,10 @@ export const t = {
   running: "#32D74B",
   needs: "#FF9F0A",
   done: "#8E8E93",
+  /** Agent "done" but active within INACTIVE_AFTER_MS (app-derived). */
+  idle: "#0A84FF",
+  away: "#FFD60A",
+  error: "#FF453A",
   accent: "#0A84FF",
   danger: "#FF6961",
 

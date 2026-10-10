@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTree, graveyard, groupedAgents, liveDurations, splitInbox, formatDuration } from "../selectors";
+import { agentTree, displayStatus, graveyard, groupedAgents, INACTIVE_AFTER_MS, liveDurations, splitInbox, formatDuration } from "../selectors";
 import type { MachineState, InboxItem } from "../store";
 
 const now = Date.parse("2026-10-07T00:00:00Z");
@@ -14,14 +14,37 @@ const m: MachineState = {
     e: { id: "e", status: "ended", ended_at: iso(10) },
     f: { id: "f", status: "running", parent: "zzz" },
     g: { id: "g", status: "done", special: true },
+    h: { id: "h", status: "done", parent: "a", status_since: iso(10) },
+    i: { id: "i", status: "ended", parent: "a", ended_at: iso(5) },
+    j: { id: "j", status: "done", last_active_at: iso(60_000) },
   },
 };
 
 describe("selectors", () => {
   it("nests subagents, hides ended, floats needs_you", () => {
     const tree = agentTree(m);
-    expect(tree.map((n) => n.agent.id)).toEqual(["b", "a", "f", "g"]);
+    expect(tree.map((n) => n.agent.id)).toEqual(["b", "a", "f", "g", "j"]);
     expect(tree[0].children.map((c) => c.id)).toEqual(["d", "c"]);
+    // finished / ended subagents are dropped; the parent's list just shrinks
+    expect(tree.find((n) => n.agent.id === "a")!.children).toEqual([]);
+  });
+  it("splits done into idle (< threshold) and inactive", () => {
+    expect(displayStatus(m.agents.j, now)).toBe("idle");
+    expect(displayStatus({ id: "x", status: "done", last_active_at: iso(INACTIVE_AFTER_MS + 1) }, now)).toBe("inactive");
+    expect(displayStatus({ id: "x", status: "done" }, now)).toBe("inactive");
+    expect(displayStatus(m.agents.a, now)).toBe("running");
+  });
+  it("counts away/error and floats machines with errors", () => {
+    const mm: MachineState = { machineId: "m_2", name: "pi", trusts: {}, agents: { x: { id: "x", status: "error", error: { kind: "overloaded" } }, y: { id: "y", status: "away" } } };
+    const [g] = groupedAgents({ machines: { m_2: mm }, inbox: [], prefs: { muted: {}, blocked: {} } }, {}, now);
+    expect([g.errors, g.away, g.running]).toEqual([1, 1, 0]);
+    expect(g.nodes.map((n) => n.agent.id)).toEqual(["x", "y"]);
+    expect(displayStatus(mm.agents.y, now)).toBe("away");
+  });
+  it("hides inactive roots behind the machine line, keeps parents of live subagents", () => {
+    const [g] = groupedAgents({ machines: { m_1: m }, inbox: [], prefs: { muted: {}, blocked: {} } }, {}, now);
+    expect(g.nodes.map((n) => n.agent.id)).toEqual(["b", "a", "f", "j"]);
+    expect(g.inactive.map((n) => n.agent.id)).toEqual(["g"]);
   });
   it("adds the open period to durations", () => {
     expect(liveDurations(m.agents.a, now).runningMs).toBe(61_000);

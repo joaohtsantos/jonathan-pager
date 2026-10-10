@@ -48,3 +48,12 @@ export function SelectCircle({ on }: { on: boolean }) {
     </View>
   );
 }
+
+/** Shown instead of a checkbox on rows that can't be bulk-selected (permission/trust asks). */
+export function LockedCircle() {
+  return (
+    <View accessibilityLabel="Not selectable" style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderStyle: "dashed", borderColor: t.faint, alignItems: "center", justifyContent: "center" }}>
+      <Feather name="lock" size={11} color={t.faint} />
+    </View>
+  );
+}

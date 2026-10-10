@@ -19,12 +19,14 @@ import {
   questionForAgent,
   recapLines,
   type Resolution,
+  displayStatus,
+  subagentVisible,
 } from "../../porter/selectors";
 import type { Agent } from "../../porter/types";
 import type { AgentDetailParams } from "../../navigation/types";
 import { BackHeader, BigButton, BottomBar, ButtonPair, Empty, M, Note, Screen, StatusDot, T, statusColor } from "../../components/ui";
 import { useToast } from "../../components/Toast";
-import { statusLabel } from "./AgentsScreen";
+import { errorLine, statusLabel } from "./AgentsScreen";
 import { t } from "../../theme";
 
 type Nav = NativeStackNavigationProp<{ AgentDetail: AgentDetailParams; AgentsList: undefined; InboxList: undefined }>;
@@ -105,7 +107,7 @@ export default function AgentDetailScreen() {
   const live = machineLiveness(machine, presence, now);
   const parent = agent.parent ? machine.agents[agent.parent] : undefined;
   const isSub = !!agent.parent;
-  const children = Object.values(machine.agents).filter((a) => a.parent === agent.id && a.status !== "ended");
+  const children = Object.values(machine.agents).filter((a) => a.parent === agent.id && subagentVisible(a));
   const approver = machine.subscribed?.approver === true;
   const d = liveDurations(agent, now);
   const question = agent.status === "needs_you" ? questionForAgent(state.inbox, machine.machineId, machine.name, agent.id, now) : undefined;
@@ -144,7 +146,7 @@ export default function AgentDetailScreen() {
   // ---- status line ------------------------------------------------------------
   const ended = agent.status === "ended";
   const stale = !live.online && (agent.status === "needs_you" || agent.status === "running");
-  const statusText = ended ? `ended · ${agent.end_reason ?? "closed"}` : agent.status === "needs_you" && agent.needs?.kind !== "permission" ? "has a question" : statusLabel(agent);
+  const statusText = ended ? `ended · ${agent.end_reason ?? "closed"}` : agent.status === "needs_you" && agent.needs?.kind !== "permission" ? "has a question" : agent.status === "error" ? errorLine(agent) : statusLabel(agent, now);
   const clock = ended
     ? agent.ended_at
       ? `${new Date(agent.ended_at).toDateString() === new Date(now).toDateString() ? "today" : new Date(agent.ended_at).toLocaleDateString()} ${formatHM(agent.ended_at)}`
@@ -225,8 +227,8 @@ export default function AgentDetailScreen() {
         <View style={{ gap: 8 }}>
           <T mono size={24} weight="600">{isSub ? agent.agent_type || agent.title || agent.id.slice(0, 8) : agent.title || agent.id.slice(0, 8)}</T>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-            <StatusDot status={agent.status} />
-            <T color={ended || agent.status === "done" ? t.dim : statusColor(agent.status)}>{statusText}</T>
+            <StatusDot status={ended ? "ended" : displayStatus(agent, now)} />
+            <T color={ended || displayStatus(agent, now) === "inactive" ? t.dim : statusColor(displayStatus(agent, now))}>{statusText}</T>
             <T mono color={t.faint}>{clock}</T>
           </View>
           {isSub && parent ? (
@@ -289,7 +291,7 @@ export default function AgentDetailScreen() {
             <T size={12} color={t.faint}>Subagents</T>
             {children.map((c) => (
               <Pressable key={c.id} onPress={() => nav.push("AgentDetail", { machine: machine.machineId, agent: c.id, from: backLabel })} style={{ flexDirection: "row", alignItems: "center", gap: 8, opacity: c.status === "done" ? 0.6 : 1, minHeight: 28 }}>
-                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor(c.status) }} />
+                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor(displayStatus(c, now)) }} />
                 <T mono>{c.agent_type || c.title || c.id.slice(0, 8)}</T>
                 <T color={t.dim} lines={1} style={{ flex: 1 }}>
                   · {c.status === "done" ? "done" : c.status === "needs_you" ? c.needs?.text || "needs you" : c.summary || c.status}

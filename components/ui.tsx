@@ -272,7 +272,7 @@ export function Input(props: TextInputProps & { mono?: boolean }) {
 
 // ---- status -------------------------------------------------------------------------
 
-export const statusColor = (status: string) => (status === "needs_you" ? t.needs : status === "running" ? t.running : t.done);
+export const statusColor = (status: string) => (status === "needs_you" ? t.needs : status === "running" ? t.running : status === "idle" ? t.idle : status === "away" ? t.away : status === "error" ? t.error : t.done);
 
 function Pulse({ color, size }: { color: string; size: number }) {
   const v = useRef(new Animated.Value(0)).current;
@@ -303,12 +303,12 @@ export function StatusDot({ status, size = 8, style }: { status: string; size?: 
   const ended = status === "ended";
   return (
     <View style={[{ width: size, height: size, alignItems: "center", justifyContent: "center" }, style]}>
-      {status === "running" ? <Pulse color={color} size={size} /> : null}
+      {status === "running" || status === "away" ? <Pulse color={color} size={size} /> : null}
       <View
         style={[
           { width: size, height: size, borderRadius: size / 2 },
           ended ? { borderWidth: 1.5, borderColor: t.done } : { backgroundColor: color },
-          (status === "running" || status === "needs_you") && { shadowColor: color, shadowOpacity: 1, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 2 },
+          (status === "running" || status === "away" || status === "needs_you" || status === "error") && { shadowColor: color, shadowOpacity: 1, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 2 },
         ]}
       />
     </View>

@@ -21,6 +21,8 @@ export type SelAction =
   | { type: "toggleAll"; keys: SelKey[] }
   /** Drop selected keys that are no longer visible (answered, filtered out, dismissed). */
   | { type: "prune"; visible: SelKey[] }
+  /** Drop handled keys; leaves selection mode once nothing is left. */
+  | { type: "deselect"; keys: SelKey[] }
   | { type: "exit" };
 
 export const initialSel: SelState = { active: false, selected: [] };
@@ -41,6 +43,11 @@ export function selReducer(s: SelState, a: SelAction): SelState {
       const next = s.selected.filter((k) => vis.has(k));
       return next.length === s.selected.length ? s : { ...s, selected: next };
     }
+    case "deselect": {
+      const drop = new Set(a.keys);
+      const next = s.selected.filter((k) => !drop.has(k));
+      return next.length ? { ...s, selected: next } : initialSel;
+    }
     case "exit":
       return initialSel;
   }
@@ -48,36 +55,68 @@ export function selReducer(s: SelState, a: SelAction): SelState {
 
 export const allSelected = (s: SelState, keys: SelKey[]) => keys.length > 0 && keys.every((k) => s.selected.includes(k));
 
-export interface DismissPlan {
-  /** Keys hidden locally (porter items + pushes; requests only once rejected). */
-  local: SelKey[];
-  /** pager-api request ids to reject. */
-  requests: string[];
-  /** Porter questions kept: they must be answered. */
-  kept: SelKey[];
+// ---- what a selection contains / which actions fit -------------------------
+
+/** "message": porter notify or pager push · "request": pager-api request · "question": porter question (non permission/trust). */
+export type SelCat = "message" | "request" | "question";
+
+/** Porter permission/trust asks are answered one at a time, never bulk-handled. */
+export const bulkLocked = (kind?: string) => kind === "permission" || kind === "trust";
+
+export interface SelSummary {
+  messages: SelKey[];
+  requests: SelKey[];
+  questions: SelKey[];
 }
 
-export function planDismiss(selected: SelKey[], isQuestion: (k: SelKey) => boolean): DismissPlan {
-  const plan: DismissPlan = { local: [], requests: [], kept: [] };
+export function summarize(selected: SelKey[], catOf: (k: SelKey) => SelCat | undefined): SelSummary {
+  const out: SelSummary = { messages: [], requests: [], questions: [] };
   for (const k of selected) {
-    const kind = keyKind(k);
-    if (kind === "request") plan.requests.push(k.slice(2));
-    else if (kind === "porter" && isQuestion(k)) plan.kept.push(k);
-    else plan.local.push(k);
+    const c = catOf(k);
+    if (c === "message") out.messages.push(k);
+    else if (c === "request") out.requests.push(k);
+    else if (c === "question") out.questions.push(k);
   }
-  return plan;
+  return out;
+}
+
+export type BulkActionId = "seen" | "dismiss" | "reject";
+export interface BulkAction {
+  id: BulkActionId;
+  label: string;
+  /** Exactly the selected keys this action applies to. */
+  keys: SelKey[];
+  danger?: boolean;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** Confirm copy, or null when no confirm is needed (no requests in the selection). */
-export function dismissConfirm(plan: DismissPlan): { title: string; body: string } | null {
-  if (!plan.requests.length) return null;
-  const n = plan.local.length + plan.requests.length;
-  const parts = [`This rejects ${plural(plan.requests.length, "pending request")}.`];
-  if (plan.kept.length) parts.push(`${plural(plan.kept.length, "question")} waiting on you ${plan.kept.length === 1 ? "is" : "are"} kept.`);
-  return { title: `Dismiss ${plural(n, "item")}?`, body: parts.join(" ") };
+/**
+ * Bottom-bar actions for the selection. Dismiss only ever touches messages and
+ * Reject only pager-api requests, so a mixed selection never rejects silently.
+ */
+export function barActions(sum: SelSummary): { actions: BulkAction[]; note?: string } {
+  const { messages, requests, questions } = sum;
+  const asks = [...requests, ...questions];
+  const all = [...messages, ...asks];
+  if (!asks.length) return { actions: [{ id: "seen", label: "Mark seen", keys: messages }, { id: "dismiss", label: "Dismiss", keys: messages }] };
+  if (!messages.length) {
+    const seen: BulkAction = { id: "seen", label: "Mark seen", keys: asks };
+    return { actions: requests.length ? [{ id: "reject", label: "Reject", keys: requests, danger: true }, seen] : [seen] };
+  }
+  const note = [plural(messages.length, "message"), requests.length ? plural(requests.length, "request") : "", questions.length ? plural(questions.length, "question") : ""].filter(Boolean).join(" · ");
+  const actions: BulkAction[] = [
+    { id: "seen", label: `Mark ${all.length} seen`, keys: all },
+    { id: "dismiss", label: `Dismiss ${plural(messages.length, "message")}`, keys: messages },
+  ];
+  if (requests.length) actions.push({ id: "reject", label: `Reject ${plural(requests.length, "request")}`, keys: requests, danger: true });
+  return { actions, note };
 }
+
+export const rejectConfirm = (n: number) => ({ title: `Reject ${plural(n, "request")}?`, body: "They are rejected on pager-api. This can't be undone." });
+
+/** Per-section header toggle. */
+export const sectionToggleLabel = (s: SelState, keys: SelKey[]) => (allSelected(s, keys) ? "None" : "Select all");
 
 /** Run `fn` over `items` with at most `limit` in flight; never throws. */
 export async function runBatched<I>(

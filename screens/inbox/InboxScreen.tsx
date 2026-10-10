@@ -2,9 +2,12 @@
 // button (porter questions + pending pager-api requests, first 5 then "N more"),
 // then the timeline by day: porter notifies + legacy pager-api pushes.
 // Fixed 68px rows; colored icon per kind, no status dots; unread = bold white.
-// Bulk actions: long-press a row (or "Select") → round checkboxes, "N selected"
-// header, bottom bar Mark seen / Dismiss (logic in ./selection).
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+// Bulk actions: long-press a row (or "Select") → round checkboxes on every row,
+// per-section "Select all"/"None", bottom bar adapted to what is selected
+// (messages: Mark seen · Dismiss; requests: Reject · Mark seen; mixed: each
+// action labelled with what it applies to). Porter permission/trust asks are
+// never bulk-actionable. Logic in ./selection.
+import { useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { BackHandler, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
@@ -15,11 +18,11 @@ import type { InboxItem } from "../../porter/store";
 import { answerRequest, fetchPendingRequests, fetchPushes, markAllPushesRead, pagerConfigured, setPushRead, type PagerPush, type PagerRequest } from "../../lib/pagerApi";
 import { usePersisted } from "../../lib/usePersisted";
 import type { InboxStackParamList } from "../../navigation/types";
-import { BigButton, BottomBar, ButtonPair, Empty, LargeHeader, OfflineBanner, MenuSheet, Screen, T, TextBtn, type MenuOption } from "../../components/ui";
+import { BigButton, BottomBar, Empty, LargeHeader, OfflineBanner, MenuSheet, Screen, T, TextBtn, type MenuOption } from "../../components/ui";
 import ConfirmModal from "../../components/ConfirmModal";
 import { useToast } from "../../components/Toast";
-import { KindIcon, SelectCircle, Sender } from "./inboxLook";
-import { addDismissed, allSelected, dismissConfirm, initialSel, planDismiss, porterKey, pushKey, requestKey, runBatched, selReducer, type DismissPlan, type SelKey } from "./selection";
+import { KindIcon, LockedCircle, SelectCircle, Sender } from "./inboxLook";
+import { addDismissed, barActions, bulkLocked, initialSel, porterKey, pushKey, rejectConfirm, requestKey, runBatched, sectionToggleLabel, selReducer, summarize, type BulkAction, type SelCat, type SelKey } from "./selection";
 import { clearGroups } from "../../porter/notify";
 import { t } from "../../theme";
 
@@ -53,7 +56,10 @@ export default function InboxScreen() {
   const [dismissed, setDismissed] = usePersisted<SelKey[]>("ui.inbox.dismissed.v1", []);
   const dismissedSet = useMemo(() => new Set(dismissed), [dismissed]);
   const [progress, setProgress] = useState("");
-  const [bulkConfirm, setBulkConfirm] = useState<{ title: string; body: string; plan: DismissPlan } | null>(null);
+  const [rejectAsk, setRejectAsk] = useState<SelKey[] | null>(null);
+  // pager-api requests have no read state; "Mark seen" keeps them out of the badge locally.
+  const [seenRequests, setSeenRequests] = usePersisted<string[]>("ui.inbox.seenRequests.v1", []);
+  const seenReqSet = useMemo(() => new Set(seenRequests), [seenRequests]);
 
   useEffect(() => setMachineFilter(route.params?.machine), [route.params?.machine]);
 
@@ -112,8 +118,8 @@ export default function InboxScreen() {
 
   const unreadPorter = state.inbox.filter((i) => !i.read && !dismissedSet.has(porterKey(i.fromMachine, i.id))).length;
   const unreadPager = pagerOn ? pushes.filter((p) => !p.read && !dismissedSet.has(pushKey(p.id))).length : 0;
-  const openQuestions = splitInbox(state.inbox, now).questions.length;
-  const attention = unreadPorter + unreadPager + (pagerOn ? requests.length : 0) + openQuestions;
+  const openQuestions = splitInbox(state.inbox, now).questions.filter((q) => !q.read).length;
+  const attention = unreadPorter + unreadPager + (pagerOn ? requests.filter((r) => !seenReqSet.has(r.id)).length : 0) + openQuestions;
 
   useEffect(() => {
     nav.getParent()?.setOptions({ tabBarBadge: attention > 0 ? " " : undefined });
@@ -164,27 +170,33 @@ export default function InboxScreen() {
     [requests, showPager]
   );
   const waitingCount = questions.length + pagerWaiting.length;
-  const waitingCap = showAllWaiting ? Infinity : WAITING_CAP;
+  // Selection mode lists every waiting card so "Select all" covers what you see.
+  const waitingCap = showAllWaiting || sel.active ? Infinity : WAITING_CAP;
   const shownQuestions = questions.slice(0, waitingCap);
   const shownRequests = pagerWaiting.slice(0, Math.max(0, waitingCap - shownQuestions.length));
   const hiddenWaiting = waitingCount - shownQuestions.length - shownRequests.length;
 
   // ---- selection / bulk actions ----
-  // Everything the current sender filter shows (incl. waiting cards past the cap).
-  const visibleKeys = useMemo(
-    () => [...questions.map((q) => porterKey(q.fromMachine, q.id)), ...pagerWaiting.map((r) => requestKey(r.id)), ...timeline.map(entryKey)],
-    [questions, pagerWaiting, timeline]
+  const lockedQ = (q: InboxItem) => bulkLocked(q.notify.kind);
+  const waitingKeys = useMemo(
+    () => [...questions.filter((q) => !lockedQ(q)).map((q) => porterKey(q.fromMachine, q.id)), ...pagerWaiting.map((r) => requestKey(r.id))],
+    [questions, pagerWaiting]
   );
+  const hasLocked = questions.some(lockedQ);
+  // Everything selectable under the current sender filter.
+  const visibleKeys = useMemo(() => [...waitingKeys, ...timeline.map(entryKey)], [waitingKeys, timeline]);
   const visibleSig = visibleKeys.join("|");
   useEffect(() => {
     dispatch({ type: "prune", visible: visibleKeys });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSig]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => porterKey(q.fromMachine, q.id))), [questions]);
+  const catOf = (k: SelKey): SelCat | undefined => (k.startsWith("r:") ? "request" : questionKeys.has(k) ? "question" : "message");
   const selecting = sel.active;
   const selectedSet = new Set(sel.selected);
   const nSel = sel.selected.length;
   const busy = progress !== "";
+  const bar = barActions(summarize(sel.selected, catOf));
 
   useFocusEffect(
     useCallback(() => {
@@ -197,14 +209,18 @@ export default function InboxScreen() {
     }, [selecting])
   );
 
+  // In selection mode a tap only toggles; it never opens the item.
   const pressRow = (key: SelKey, open: () => void) => (selecting ? dispatch({ type: "toggle", key }) : open());
-  const longPressRow = (key: SelKey) => dispatch({ type: "enter", key });
+  const longPressRow = (key?: SelKey) => dispatch({ type: "enter", key });
+  const lockedHint = () => toast.show("Permission and trust asks are answered one at a time — Cancel, then open it", 3000);
 
-  const bulkMarkSeen = async () => {
-    const keys = sel.selected;
-    const porter = state.inbox.filter((i) => !i.read && keys.includes(porterKey(i.fromMachine, i.id)));
-    const pushIds = pushes.filter((p) => !p.read && keys.includes(pushKey(p.id))).map((p) => p.id);
+  const bulkMarkSeen = async (keys: SelKey[]) => {
+    const ks = new Set(keys);
+    const porter = state.inbox.filter((i) => !i.read && ks.has(porterKey(i.fromMachine, i.id)));
+    const pushIds = pushes.filter((p) => !p.read && ks.has(pushKey(p.id))).map((p) => p.id);
+    const reqIds = keys.filter((k) => k.startsWith("r:")).map((k) => k.slice(2));
     await Promise.all(porter.map((i) => store?.updateInbox(i.id, i.fromMachine, (x) => ({ ...x, read: true }))));
+    if (reqIds.length) setSeenRequests(Array.from(new Set([...seenRequests, ...reqIds])).slice(-500));
     let failed = 0;
     if (pushIds.length) {
       const ids = new Set(pushIds);
@@ -215,43 +231,40 @@ export default function InboxScreen() {
       setProgress("");
     }
     dispatch({ type: "exit" });
-    const n = porter.length + pushIds.length;
+    const n = keys.length;
     toast.show(failed ? `Marked ${n - failed} seen · ${failed} failed` : `Marked ${n} seen`, failed ? 3000 : 1500);
   };
 
-  const doDismiss = async (plan: DismissPlan) => {
-    setBulkConfirm(null);
-    if (plan.local.length) setDismissed(addDismissed(dismissed, plan.local));
-    let ok = 0;
-    let failed = 0;
-    if (plan.requests.length) {
-      const byId = new Map(requests.map((r) => [r.id, r]));
-      const reqs = plan.requests.map((id) => byId.get(id)).filter((r): r is PagerRequest => !!r);
-      setProgress(`Dismissing 0/${reqs.length}`);
-      const res = await runBatched(reqs, (r) => answerRequest(r, "rejected"), CONCURRENCY, (d, n) => setProgress(`Dismissing ${d}/${n}`));
-      const done = new Set(res.ok.map((r) => r.id));
-      setRequests((l) => l.filter((r) => !done.has(r.id)));
-      ok = res.ok.length;
-      failed = res.failed.length + (plan.requests.length - reqs.length);
-      setProgress("");
-    }
-    dispatch({ type: "exit" });
-    const parts = [`Dismissed ${plan.local.length + ok}`];
-    if (failed) parts.push(`${failed} failed`);
-    if (plan.kept.length) parts.push(`${plan.kept.length} kept`);
-    toast.show(parts.join(" · "), failed ? 3000 : 1500);
+  /** Messages only: hidden locally (porter notifies + pushes). */
+  const bulkDismiss = (keys: SelKey[]) => {
+    setDismissed(addDismissed(dismissed, keys));
+    dispatch({ type: "deselect", keys });
+    toast.show(`Dismissed ${keys.length}`, 1500);
   };
 
-  const startDismiss = () => {
-    const plan = planDismiss(sel.selected, (k) => questionKeys.has(k));
-    if (!plan.local.length && !plan.requests.length) {
-      toast.show(plan.kept.length === 1 ? "That question needs an answer" : "These questions need an answer", 2500);
-      return;
-    }
-    const c = dismissConfirm(plan);
-    if (c) setBulkConfirm({ ...c, plan });
-    else void doDismiss(plan);
+  /** pager-api requests only, after an explicit confirm. */
+  const bulkReject = async (keys: SelKey[]) => {
+    setRejectAsk(null);
+    const byId = new Map(requests.map((r) => [r.id, r]));
+    const reqs = keys.map((k) => byId.get(k.slice(2))).filter((r): r is PagerRequest => !!r);
+    setProgress(`Rejecting 0/${reqs.length}`);
+    const res = await runBatched(reqs, (r) => answerRequest(r, "rejected"), CONCURRENCY, (d, n) => setProgress(`Rejecting ${d}/${n}`));
+    setProgress("");
+    const done = new Set(res.ok.map((r) => r.id));
+    setRequests((l) => l.filter((r) => !done.has(r.id)));
+    dispatch({ type: "deselect", keys: keys.filter((k) => done.has(k.slice(2))) });
+    const failed = keys.length - res.ok.length;
+    toast.show(failed ? `Rejected ${res.ok.length} · ${failed} failed` : `Rejected ${res.ok.length}`, failed ? 3000 : 1500);
   };
+
+  const runAction = (a: BulkAction) => {
+    if (a.id === "seen") void bulkMarkSeen(a.keys);
+    else if (a.id === "dismiss") bulkDismiss(a.keys);
+    else setRejectAsk(a.keys);
+  };
+
+  const secToggle = (keys: SelKey[]) =>
+    selecting && keys.length ? <TextBtn label={sectionToggleLabel(sel, keys)} size={14} disabled={busy} onPress={() => dispatch({ type: "toggleAll", keys })} /> : undefined;
 
   return (
     <Screen inbox>
@@ -260,7 +273,6 @@ export default function InboxScreen() {
         right={
           selecting ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <TextBtn label={allSelected(sel, visibleKeys) ? "Deselect all" : "Select all"} size={15} disabled={busy || !visibleKeys.length} onPress={() => dispatch({ type: "toggleAll", keys: visibleKeys })} />
               <TextBtn label="Cancel" size={15} disabled={busy} onPress={() => dispatch({ type: "exit" })} />
             </View>
           ) : (
@@ -268,7 +280,7 @@ export default function InboxScreen() {
             <Pressable onPress={() => setMenu(true)} hitSlop={6} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}>
               <T size={13} color="rgba(255,255,255,0.75)">{filterLabel} ▾</T>
             </Pressable>
-            {visibleKeys.length ? (
+            {visibleKeys.length || hasLocked ? (
               <Pressable onPress={() => dispatch({ type: "enter" })} hitSlop={6} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}>
                 <T size={15} weight="600" color={t.accent}>Select</T>
               </Pressable>
@@ -287,18 +299,27 @@ export default function InboxScreen() {
       >
         {waitingCount > 0 ? (
           <View>
-            <SecH title="Waiting on you" count={waitingCount} />
+            <SecH title="Waiting on you" count={waitingCount} right={secToggle(waitingKeys)} />
+            {selecting && hasLocked ? (
+              <T size={12} color={t.text3} style={{ marginHorizontal: 20, marginTop: -4, marginBottom: 8 }}>Permission and trust asks can't be bulk-handled — answer them one at a time.</T>
+            ) : null}
             {shownQuestions.map((q) => {
               const sp = senderParts(q, nameOf(q.fromMachine));
               const exp = q.notify.expires_at ? Date.parse(q.notify.expires_at) : 0;
               const when = exp ? (exp - now < 3600_000 ? `${formatClock(exp - now)} left` : `until ${formatHM(exp)}`) : "";
               const key = porterKey(q.fromMachine, q.id);
+              const locked = lockedQ(q);
               return (
-                <Pressable key={`${q.fromMachine}/${q.id}`} onPress={() => pressRow(key, () => openItem(q))} onLongPress={() => longPressRow(key)} style={({ pressed }) => [s.card, pressed && { opacity: 0.8 }]}>
-                  {selecting ? <SelectCircle on={selectedSet.has(key)} /> : null}
+                <Pressable
+                  key={`${q.fromMachine}/${q.id}`}
+                  onPress={() => (selecting && locked ? lockedHint() : pressRow(key, () => openItem(q)))}
+                  onLongPress={() => longPressRow(locked ? undefined : key)}
+                  style={({ pressed }) => [s.card, selecting && locked && { opacity: 0.5 }, pressed && { opacity: 0.8 }]}
+                >
+                  {selecting ? locked ? <LockedCircle /> : <SelectCircle on={selectedSet.has(key)} /> : null}
                   <KindIcon look={notifyLook(q, now)} />
                   <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                    <T size={15} weight="600" color={t.white} lines={1}>{q.notify.title}</T>
+                    <T size={15} weight={q.read ? "400" : "600"} color={t.white} lines={1}>{q.notify.title}</T>
                     <View style={{ flexDirection: "row", gap: 6, overflow: "hidden" }}>
                       <Sender machine={sp.machine} agent={sp.agent} />
                       {when ? <T size={12} color={t.text3} lines={1}>· {when}</T> : null}
@@ -317,7 +338,7 @@ export default function InboxScreen() {
                 {selecting ? <SelectCircle on={selectedSet.has(requestKey(r.id))} /> : null}
                 <KindIcon look={r.priority === "high" ? "high" : "question"} />
                 <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                  <T size={15} weight="600" color={t.white} lines={1}>{r.email_subject ?? r.summary}</T>
+                  <T size={15} weight={seenReqSet.has(r.id) ? "400" : "600"} color={t.white} lines={1}>{r.email_subject ?? r.summary}</T>
                   <View style={{ flexDirection: "row", gap: 6, overflow: "hidden" }}>
                     <T mono size={12} color="rgba(255,255,255,0.85)" lines={1} style={{ flexShrink: 1 }}>{r.email_sender ?? `pager:${r.type}`}</T>
                     <T size={12} color={t.text3}>· {formatHM(Date.parse(r.created_at) || 0)}</T>
@@ -330,7 +351,7 @@ export default function InboxScreen() {
                 )}
               </Pressable>
             ))}
-            {hiddenWaiting > 0 || (showAllWaiting && waitingCount > WAITING_CAP) ? (
+            {!selecting && (hiddenWaiting > 0 || (showAllWaiting && waitingCount > WAITING_CAP)) ? (
               <Pressable onPress={() => setShowAllWaiting((v) => !v)} hitSlop={4} style={({ pressed }) => [s.more, pressed && { opacity: 0.6 }]}>
                 <T size={14} weight="600" color={t.accent}>{hiddenWaiting > 0 ? `${hiddenWaiting} more` : "Show less"}</T>
               </Pressable>
@@ -340,7 +361,7 @@ export default function InboxScreen() {
 
         {days.map((d) => (
           <View key={d.day}>
-            <SecH title={d.day} />
+            <SecH title={d.day} right={secToggle(d.items.map(entryKey))} />
             <View style={s.list}>
               {d.items.map((e) =>
                 e.kind === "porter" ? (
@@ -357,29 +378,40 @@ export default function InboxScreen() {
         {pagerError && showPager ? <T size={11} color={t.faint} style={{ marginHorizontal: 20 }}>pager-api: {pagerError}</T> : null}
       </ScrollView>
       {selecting ? (
-        <BottomBar inbox note={progress || undefined}>
-          <ButtonPair>
-            <View style={[s.barBtn, (busy || !nSel) && s.barBtnOff]} pointerEvents={busy || !nSel ? "none" : "auto"}>
-              <BigButton inbox kind="secondary" label="Mark seen" disabled={busy || !nSel} onPress={() => void bulkMarkSeen()} />
-            </View>
-            <View style={[s.barBtn, (busy || !nSel) && s.barBtnOff]} pointerEvents={busy || !nSel ? "none" : "auto"}>
-              <BigButton inbox kind="secondary" label="Dismiss" disabled={busy || !nSel} onPress={startDismiss} />
-            </View>
-          </ButtonPair>
+        <BottomBar inbox note={progress || bar.note || undefined}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            {bar.actions.map((a) => {
+              const off = busy || !a.keys.length;
+              return (
+                <View key={a.id} style={[s.barBtn, bar.actions.length > 2 && a.id === "seen" && { flexBasis: "100%" }, off && s.barBtnOff]} pointerEvents={off ? "none" : "auto"}>
+                  <BigButton inbox kind="secondary" label={a.label} disabled={off} onPress={() => runAction(a)} />
+                </View>
+              );
+            })}
+          </View>
         </BottomBar>
       ) : null}
       <MenuSheet visible={menu} title="Show" options={menuOptions} onClose={() => setMenu(false)} />
       <ConfirmModal visible={confirm} title="Mark all seen" body={`Mark ${unreadPorter + unreadPager} item(s) as seen?`} confirmLabel="Mark all" onConfirm={markAll} onCancel={() => setConfirm(false)} />
-      <ConfirmModal visible={!!bulkConfirm} title={bulkConfirm?.title ?? ""} body={bulkConfirm?.body ?? ""} confirmLabel="Dismiss" danger onConfirm={() => bulkConfirm && void doDismiss(bulkConfirm.plan)} onCancel={() => setBulkConfirm(null)} />
+      <ConfirmModal
+        visible={!!rejectAsk}
+        title={rejectAsk ? rejectConfirm(rejectAsk.length).title : ""}
+        body={rejectAsk ? rejectConfirm(rejectAsk.length).body : ""}
+        confirmLabel="Reject"
+        danger
+        onConfirm={() => rejectAsk && void bulkReject(rejectAsk)}
+        onCancel={() => setRejectAsk(null)}
+      />
     </Screen>
   );
 }
 
-function SecH({ title, count }: { title: string; count?: number }) {
+function SecH({ title, count, right }: { title: string; count?: number; right?: ReactNode }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 7, paddingHorizontal: 20, marginBottom: 8 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 20, marginBottom: 8, minHeight: 24 }}>
       <T size={15} weight="700" color={t.white}>{title}</T>
       {count !== undefined ? <T size={12} weight="500" color={t.text3}>{count}</T> : null}
+      {right ? <View style={{ marginLeft: "auto" }}>{right}</View> : null}
     </View>
   );
 }

@@ -3,7 +3,7 @@ import type { InboxItem, MachineState, PorterSnapshot } from "./store";
 import { isQuestion, notifySenderAgent } from "./store";
 import type { Agent } from "./types";
 
-const STATUS_ORDER: Record<string, number> = { needs_you: 0, running: 1, done: 2, ended: 3 };
+const STATUS_ORDER: Record<string, number> = { needs_you: 0, error: 1, running: 2, away: 2, done: 3, ended: 4 };
 
 const ts = (s?: string) => (s ? Date.parse(s) || 0 : 0);
 
@@ -11,7 +11,7 @@ const ts = (s?: string) => (s ? Date.parse(s) || 0 : 0);
 export function liveDurations(a: Agent, now = Date.now()) {
   const open = a.status_since ? Math.max(0, now - ts(a.status_since)) : 0;
   return {
-    runningMs: (a.running_ms ?? 0) + (a.status === "running" ? open : 0),
+    runningMs: (a.running_ms ?? 0) + (a.status === "running" || a.status === "away" ? open : 0),
     waitingMs: (a.waiting_ms ?? 0) + (a.status === "needs_you" ? open : 0),
     inStatusMs: open,
   };
@@ -30,9 +30,23 @@ export interface AgentNode {
   children: Agent[];
 }
 
-/** Non-ended agents, subagents nested under their parent (orphans shown top-level). */
+/** A "done" agent quiet for longer than this is inactive (same threshold as the Mac Agent Monitor). */
+export const INACTIVE_AFTER_MS = 5 * 60_000;
+
+/** Subagents are only shown while live; finished/ended ones are hidden everywhere. */
+export const subagentVisible = (a: Agent) => a.status === "running" || a.status === "away" || a.status === "needs_you";
+
+/** App-derived display status: "done" splits into idle (recent) and inactive (gray). */
+export type DisplayStatus = "running" | "away" | "needs_you" | "error" | "idle" | "inactive" | "ended";
+export function displayStatus(a: Agent, now = Date.now()): DisplayStatus {
+  if (a.status !== "done") return a.status;
+  const last = ts(a.last_active_at) || ts(a.status_since);
+  return last && now - last < INACTIVE_AFTER_MS ? "idle" : "inactive";
+}
+
+/** Non-ended agents, live subagents nested under their parent (orphans shown top-level). */
 export function agentTree(m: MachineState): AgentNode[] {
-  const live = Object.values(m.agents).filter((a) => a.status !== "ended");
+  const live = Object.values(m.agents).filter((a) => a.status !== "ended" && (!a.parent || subagentVisible(a)));
   const ids = new Set(live.map((a) => a.id));
   const roots = live.filter((a) => !a.parent || !ids.has(a.parent));
   return roots
@@ -47,35 +61,49 @@ export function agentTree(m: MachineState): AgentNode[] {
     });
 }
 
+/** Inactive = done, quiet past the threshold, and no live subagent under it. */
+export const nodeInactive = (n: AgentNode, now = Date.now()) => n.children.length === 0 && displayStatus(n.agent, now) === "inactive";
+
 export function machineLabel(m: MachineState | undefined, fallback: string) {
   return m?.name || fallback;
 }
 
 export interface MachineGroup {
   machine: MachineState;
+  /** Running / needs_you / idle roots (with their live subagents). */
   nodes: AgentNode[];
+  /** Inactive roots, hidden behind the per-machine "N inactive" line. */
+  inactive: AgentNode[];
   needsYou: number;
+  /** Last turn ended on an API error; counts toward attention like needsYou. */
+  errors: number;
   running: number;
+  away: number;
 }
 
-export function groupedAgents(s: PorterSnapshot, names: Record<string, string> = {}): MachineGroup[] {
+export function groupedAgents(s: PorterSnapshot, names: Record<string, string> = {}, now = Date.now()): MachineGroup[] {
   return Object.values(s.machines)
     .map((machine) => {
-      const nodes = agentTree(machine);
+      const tree = agentTree(machine);
+      const nodes = tree.filter((n) => !nodeInactive(n, now));
       const all = nodes.flatMap((n) => [n.agent, ...n.children]);
       return {
         machine: { ...machine, name: machine.name || names[machine.machineId] },
         nodes,
+        inactive: tree.filter((n) => nodeInactive(n, now)),
         needsYou: all.filter((a) => a.status === "needs_you").length,
+        errors: all.filter((a) => a.status === "error").length,
         running: all.filter((a) => a.status === "running").length,
+        away: all.filter((a) => a.status === "away").length,
       };
     })
-    .sort((a, b) => b.needsYou - a.needsYou || (a.machine.name ?? "").localeCompare(b.machine.name ?? ""));
+    .sort((a, b) => b.needsYou + b.errors - (a.needsYou + a.errors) || (a.machine.name ?? "").localeCompare(b.machine.name ?? ""));
 }
 
+/** Ended top-level sessions (finished subagents are never listed). */
 export function graveyard(s: PorterSnapshot): { machine: MachineState; agent: Agent }[] {
   return Object.values(s.machines)
-    .flatMap((machine) => Object.values(machine.agents).filter((a) => a.status === "ended").map((agent) => ({ machine, agent })))
+    .flatMap((machine) => Object.values(machine.agents).filter((a) => a.status === "ended" && !a.parent).map((agent) => ({ machine, agent })))
     .sort((x, y) => ts(y.agent.ended_at) - ts(x.agent.ended_at));
 }
 
@@ -273,7 +301,8 @@ export function orderGroups(groups: MachineGroup[], order: string[], float: bool
     return i < 0 ? order.length : i;
   };
   const sorted = [...groups].sort((a, b) => idx(a.machine.machineId) - idx(b.machine.machineId) || (a.machine.name ?? "").localeCompare(b.machine.name ?? ""));
-  return float ? [...sorted.filter((g) => g.needsYou > 0), ...sorted.filter((g) => g.needsYou === 0)] : sorted;
+  const hot = (g: MachineGroup) => g.needsYou + g.errors > 0;
+  return float ? [...sorted.filter(hot), ...sorted.filter((g) => !hot(g))] : sorted;
 }
 
 // ---- inbox presentation ----------------------------------------------------------

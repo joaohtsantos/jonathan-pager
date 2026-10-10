@@ -38,8 +38,10 @@ export interface Agent {
 export interface Decision {
   choice?: string;
   answered_by?: "phone" | "terminal" | "timeout" | "approver" | string;
-  /** Which approver answered (phone or another approver machine). */
-  approver?: { id?: string; alias?: string };
+  /** Which approver answered: porter sends the alias here plus `approver_id`
+   *  (machine id); the object form is the older mock shape. */
+  approver?: string | { id?: string; alias?: string };
+  approver_id?: string;
   at?: string;
   /** Older mock / draft shape. */
   via?: string;

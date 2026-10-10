@@ -245,7 +245,8 @@ export function decisionVia(d: NonNullable<Agent["last_decision"]>, selfId?: str
   const by = d.answered_by ?? d.via;
   if (by === "timeout") return "timeout";
   if (by === "phone" || by === "approver") {
-    if (d.approver?.id && selfId) return d.approver.id.split(":")[0] === selfId ? "phone" : "terminal";
+    const approverId = d.approver_id ?? (typeof d.approver === "object" ? d.approver.id : undefined);
+    if (approverId && selfId) return approverId.split(":")[0] === selfId ? "phone" : "terminal";
     return by === "phone" ? "phone" : "terminal";
   }
   return "terminal";

@@ -29,6 +29,12 @@ export interface Agent {
   /** With status "error": what failed, e.g. { kind: "overloaded" }. */
   error?: { kind?: string };
   end_reason?: "closed" | "stale" | string;
+  /** Long-lived agent (e.g. Joana; porter 0.2.1+): never stale, never graveyard. */
+  keep?: boolean;
+  /** Kept agents: last liveness ping (published at most once a minute). */
+  heartbeat_at?: string;
+  /** Kept agents: brain up but taking no new turns (spending cap reached). */
+  paused?: boolean;
   // ---- Proposed, not in contract v1 yet (pending João's approval). Optional;
   // the UI renders without them.
   /** "So far": multi-line recap; absent when the machine has recap off. */

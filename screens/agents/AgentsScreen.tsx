@@ -7,7 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { usePorter, usePorterState, useTick } from "../../porter/PorterProvider";
-import { displayStatus, formatClock, graveyard, groupedAgents, liveDurations, livenessText, machineLiveness, orderGroups, type AgentNode, type MachineGroup } from "../../porter/selectors";
+import { displayStatus, formatClock, statusLabel, graveyard, groupedAgents, liveDurations, livenessText, machineLiveness, orderGroups, type AgentNode, type MachineGroup } from "../../porter/selectors";
 import type { MachineState } from "../../porter/store";
 import type { Agent } from "../../porter/types";
 import type { AgentsStackParamList } from "../../navigation/types";
@@ -18,11 +18,7 @@ import { navigateTo } from "../../navigationRef";
 
 type Nav = NativeStackNavigationProp<AgentsStackParamList>;
 
-export function statusLabel(a: Agent, now = Date.now()): string {
-  if (a.status === "needs_you") return a.needs?.kind === "permission" ? "needs approval" : "needs answer";
-  if (a.status === "error") return "error";
-  return a.status === "done" ? displayStatus(a, now) : a.status;
-}
+export { statusLabel } from "../../porter/selectors";
 
 /** Right-hand clock: time in status while live, total run time once done. */
 export function agentClock(a: Agent, now: number): string {
@@ -44,7 +40,7 @@ export function AgentListRow({ agent, child, offline, now, onPress }: { agent: A
         s.row,
         child && s.childRow,
         needs && { backgroundColor: "rgba(255,159,10,0.08)" },
-        { opacity: (ds === "inactive" ? 0.6 : 1) * (offline ? 0.45 : 1) },
+        { opacity: (ds === "inactive" || ds === "deactivated" ? 0.6 : 1) * (offline ? 0.45 : 1) },
         pressed && { backgroundColor: t.fill },
       ]}
     >
@@ -82,7 +78,7 @@ export function AgentListRow({ agent, child, offline, now, onPress }: { agent: A
 
 function MachineHeader({ g, open, online, liveText, onToggle }: { g: MachineGroup; open: boolean; online: boolean; liveText: string; onToggle: () => void }) {
   // Agent Monitor colors: needs you orange, running green, idle blue (inactive ones sit behind the "N inactive" line).
-  const idle = g.nodes.filter((n) => n.agent.status === "done").length;
+  const idle = g.nodes.filter((n) => displayStatus(n.agent) === "idle").length;
   const counts = [
     g.needsYou ? { text: `${g.needsYou} needs you`, color: statusColor("needs_you") } : null,
     g.errors ? { text: `${g.errors} error`, color: statusColor("error") } : null,
@@ -129,9 +125,9 @@ export default function AgentsScreen() {
         if (!snap.machines[p.machine_id]) snap.machines[p.machine_id] = { machineId: p.machine_id, agents: {}, trusts: {} } as MachineState;
       }
     }
-    return groupedAgents(snap, names, coarseNow);
+    return groupedAgents(snap, names, coarseNow, presence);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, rt, version, mock, coarseNow]);
+  }, [state, rt, version, mock, coarseNow, presence]);
 
   // Saved order + any new machines at the bottom.
   const fullOrder = useMemo(() => [...order.filter((id) => groups.some((g) => g.machine.machineId === id)), ...groups.map((g) => g.machine.machineId).filter((id) => !order.includes(id))], [order, groups]);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { agentTree, displayStatus, graveyard, groupedAgents, INACTIVE_AFTER_MS, liveDurations, splitInbox, formatDuration } from "../selectors";
+import { agentTree, displayStatus, graveyard, groupedAgents, HEARTBEAT_FRESH_MS, INACTIVE_AFTER_MS, liveDurations, statusLabel, splitInbox, formatDuration } from "../selectors";
 import type { MachineState, InboxItem } from "../store";
+import type { Agent } from "../types";
 
 const now = Date.parse("2026-10-07T00:00:00Z");
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -71,5 +72,54 @@ describe("selectors", () => {
     expect(formatDuration(59_000)).toBe("59s");
     expect(formatDuration(61_000)).toBe("1m01s");
     expect(formatDuration(3_600_000 * 25)).toBe("1d01h");
+  });
+});
+
+describe("kept agents (keep: true)", () => {
+  const snap = (agents: MachineState["agents"]) => ({ machines: { m_pi: { machineId: "m_pi", name: "pi", trusts: {}, agents } as MachineState }, inbox: [], prefs: { muted: {}, blocked: {} } });
+  const joana = (extra: Partial<Agent> = {}): Agent => ({ id: "joana", status: "done", keep: true, last_active_at: iso(6 * 3600_000), heartbeat_at: iso(30_000), ...extra });
+  const online = { m_pi: true };
+
+  it("done → idle (blue) while the heartbeat is fresh, regardless of last turn", () => {
+    expect(displayStatus(joana(), now)).toBe("idle");
+    expect(displayStatus(joana({ heartbeat_at: iso(HEARTBEAT_FRESH_MS - 1000) }), now)).toBe("idle");
+  });
+  it("done → deactivated (gray) when the heartbeat is stale/missing or paused", () => {
+    expect(displayStatus(joana({ heartbeat_at: iso(HEARTBEAT_FRESH_MS + 1000) }), now)).toBe("deactivated");
+    expect(displayStatus(joana({ heartbeat_at: undefined }), now)).toBe("deactivated");
+    expect(displayStatus(joana({ paused: true }), now)).toBe("deactivated");
+    expect(statusLabel(joana({ paused: true }), now)).toBe("Paused · spending cap");
+    expect(statusLabel(joana({ heartbeat_at: undefined }), now)).toBe("Deactivated");
+    expect(statusLabel(joana(), now)).toBe("idle");
+  });
+  it("live statuses are unchanged", () => {
+    for (const status of ["running", "away", "needs_you", "error"] as const) expect(displayStatus(joana({ status }), now)).toBe(status);
+  });
+  it("is never folded under inactive nor in the graveyard", () => {
+    const s = snap({ joana: joana({ heartbeat_at: undefined }), gone: joana({ id: "gone", status: "ended", ended_at: iso(10) }) });
+    const [g] = groupedAgents(s, {}, now, online);
+    expect(g.inactive).toEqual([]);
+    expect(g.nodes.map((n) => n.agent.id).sort()).toEqual(["gone", "joana"]);
+    expect(graveyard(s)).toEqual([]);
+  });
+  it("is not listed when its machine is offline", () => {
+    const s = snap({ joana: joana(), x: { id: "x", status: "running" } });
+    const [g] = groupedAgents(s, {}, now, { m_pi: false });
+    expect(g.nodes.map((n) => n.agent.id)).toEqual(["x"]);
+  });
+  it("leaves non-kept agents exactly as before", () => {
+    const old = { id: "o", status: "done", last_active_at: iso(INACTIVE_AFTER_MS + 1), heartbeat_at: iso(1000) } as Agent;
+    const recent = { id: "r", status: "done", last_active_at: iso(1000) } as Agent;
+    const dead = { id: "d", status: "ended", ended_at: iso(10) } as Agent;
+    expect(displayStatus(old, now)).toBe("inactive");
+    expect(displayStatus(recent, now)).toBe("idle");
+    expect(statusLabel(old, now)).toBe("inactive");
+    const s = snap({ o: old, r: recent, d: dead });
+    for (const p of [online, { m_pi: false }, null]) {
+      const [g] = groupedAgents(s, {}, now, p);
+      expect(g.inactive.map((n) => n.agent.id)).toEqual(["o"]);
+      expect(g.nodes.map((n) => n.agent.id)).toEqual(["r"]);
+    }
+    expect(graveyard(s).map((x) => x.agent.id)).toEqual(["d"]);
   });
 });

@@ -144,7 +144,7 @@ export default function AgentDetailScreen() {
   };
 
   // ---- status line ------------------------------------------------------------
-  const ended = agent.status === "ended";
+  const ended = agent.status === "ended" && !agent.keep;
   const stale = !live.online && (agent.status === "needs_you" || agent.status === "running");
   const statusText = ended ? `ended · ${agent.end_reason ?? "closed"}` : agent.status === "needs_you" && agent.needs?.kind !== "permission" ? "has a question" : agent.status === "error" ? errorLine(agent) : statusLabel(agent, now);
   const clock = ended
@@ -153,7 +153,7 @@ export default function AgentDetailScreen() {
       : ""
     : stale
       ? "last known"
-      : agent.status === "done"
+      : agent.status === "done" || (agent.keep && agent.status === "ended")
         ? `stopped ${formatShort(d.inStatusMs)} ago`
         : formatClock(d.inStatusMs);
 
@@ -228,7 +228,7 @@ export default function AgentDetailScreen() {
           <T mono size={24} weight="600">{isSub ? agent.agent_type || agent.title || agent.id.slice(0, 8) : agent.title || agent.id.slice(0, 8)}</T>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
             <StatusDot status={ended ? "ended" : displayStatus(agent, now)} />
-            <T color={ended || displayStatus(agent, now) === "inactive" ? t.dim : statusColor(displayStatus(agent, now))}>{statusText}</T>
+            <T color={ended || displayStatus(agent, now) === "inactive" || displayStatus(agent, now) === "deactivated" ? t.dim : statusColor(displayStatus(agent, now))}>{statusText}</T>
             <T mono color={t.faint}>{clock}</T>
           </View>
           {isSub && parent ? (

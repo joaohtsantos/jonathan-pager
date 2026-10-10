@@ -36,17 +36,42 @@ export const INACTIVE_AFTER_MS = 5 * 60_000;
 /** Subagents are only shown while live; finished/ended ones are hidden everywhere. */
 export const subagentVisible = (a: Agent) => a.status === "running" || a.status === "away" || a.status === "needs_you";
 
-/** App-derived display status: "done" splits into idle (recent) and inactive (gray). */
-export type DisplayStatus = "running" | "away" | "needs_you" | "error" | "idle" | "inactive" | "ended";
+/** A kept agent's heartbeat this fresh means its brain is up (porter pings every 60s). */
+export const HEARTBEAT_FRESH_MS = 3 * 60_000;
+
+/** Kept (long-lived) agent, e.g. Joana. Only these follow the heartbeat rules. */
+export const isKept = (a: Agent) => a.keep === true;
+
+/** Kept agent's brain is up and would answer: fresh heartbeat and not paused. */
+export function keptUp(a: Agent, now = Date.now()): boolean {
+  const hb = ts(a.heartbeat_at);
+  return !a.paused && !!hb && now - hb < HEARTBEAT_FRESH_MS;
+}
+
+/**
+ * App-derived display status: "done" splits into idle (recent) and inactive (gray).
+ * Kept agents instead: done (or ended) → idle while their brain is up, else
+ * deactivated (gray); they never become inactive or ended.
+ */
+export type DisplayStatus = "running" | "away" | "needs_you" | "error" | "idle" | "inactive" | "deactivated" | "ended";
 export function displayStatus(a: Agent, now = Date.now()): DisplayStatus {
+  if (isKept(a) && (a.status === "done" || a.status === "ended")) return keptUp(a, now) ? "idle" : "deactivated";
   if (a.status !== "done") return a.status;
   const last = ts(a.last_active_at) || ts(a.status_since);
   return last && now - last < INACTIVE_AFTER_MS ? "idle" : "inactive";
 }
 
+/** Row/detail status text. */
+export function statusLabel(a: Agent, now = Date.now()): string {
+  if (a.status === "needs_you") return a.needs?.kind === "permission" ? "needs approval" : "needs answer";
+  if (a.status === "error") return "error";
+  if (displayStatus(a, now) === "deactivated") return a.paused ? "Paused · spending cap" : "Deactivated";
+  return a.status === "done" || isKept(a) ? displayStatus(a, now) : a.status;
+}
+
 /** Non-ended agents, live subagents nested under their parent (orphans shown top-level). */
 export function agentTree(m: MachineState): AgentNode[] {
-  const live = Object.values(m.agents).filter((a) => a.status !== "ended" && (!a.parent || subagentVisible(a)));
+  const live = Object.values(m.agents).filter((a) => (a.status !== "ended" || (isKept(a) && !a.parent)) && (!a.parent || subagentVisible(a)));
   const ids = new Set(live.map((a) => a.id));
   const roots = live.filter((a) => !a.parent || !ids.has(a.parent));
   return roots
@@ -62,7 +87,7 @@ export function agentTree(m: MachineState): AgentNode[] {
 }
 
 /** Inactive = done, quiet past the threshold, and no live subagent under it. */
-export const nodeInactive = (n: AgentNode, now = Date.now()) => n.children.length === 0 && displayStatus(n.agent, now) === "inactive";
+export const nodeInactive = (n: AgentNode, now = Date.now()) => !isKept(n.agent) && n.children.length === 0 && displayStatus(n.agent, now) === "inactive";
 
 export function machineLabel(m: MachineState | undefined, fallback: string) {
   return m?.name || fallback;
@@ -81,10 +106,12 @@ export interface MachineGroup {
   away: number;
 }
 
-export function groupedAgents(s: PorterSnapshot, names: Record<string, string> = {}, now = Date.now()): MachineGroup[] {
+/** `presence` (broker directory) decides machine liveness; kept agents of an offline machine are not listed. */
+export function groupedAgents(s: PorterSnapshot, names: Record<string, string> = {}, now = Date.now(), presence: Presence | null = null): MachineGroup[] {
   return Object.values(s.machines)
     .map((machine) => {
-      const tree = agentTree(machine);
+      const online = machineLiveness(machine, presence, now).online;
+      const tree = agentTree(machine).filter((n) => online || !isKept(n.agent));
       const nodes = tree.filter((n) => !nodeInactive(n, now));
       const all = nodes.flatMap((n) => [n.agent, ...n.children]);
       return {
@@ -103,7 +130,7 @@ export function groupedAgents(s: PorterSnapshot, names: Record<string, string> =
 /** Ended top-level sessions (finished subagents are never listed). */
 export function graveyard(s: PorterSnapshot): { machine: MachineState; agent: Agent }[] {
   return Object.values(s.machines)
-    .flatMap((machine) => Object.values(machine.agents).filter((a) => a.status === "ended" && !a.parent).map((agent) => ({ machine, agent })))
+    .flatMap((machine) => Object.values(machine.agents).filter((a) => a.status === "ended" && !a.parent && !isKept(a)).map((agent) => ({ machine, agent })))
     .sort((x, y) => ts(y.agent.ended_at) - ts(x.agent.ended_at));
 }
 

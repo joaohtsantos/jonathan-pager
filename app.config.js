@@ -1,6 +1,6 @@
 export default {
   expo: {
-    name: "Jonathan Pager",
+    name: "Monitor",
     slug: "jonathan-pager",
     version: "1.1.0",
     orientation: "portrait",

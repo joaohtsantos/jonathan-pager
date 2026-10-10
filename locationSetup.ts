@@ -279,7 +279,7 @@ export async function startBackgroundLocation(): Promise<void> {
     deferredUpdatesInterval: 15 * 60 * 1000,
     showsBackgroundLocationIndicator: false,
     foregroundService: {
-      notificationTitle: "Pager — location",
+      notificationTitle: "Monitor — location",
       notificationBody: "Tracking your zone presence",
       notificationColor: "#C2410C",
     },

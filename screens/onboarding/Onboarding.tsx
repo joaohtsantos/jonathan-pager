@@ -83,7 +83,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       <>
         <View style={{ alignItems: "center", gap: 14 }}>
           <Logo size={72} />
-          <T size={26} weight="700" color={t.white}>Welcome to Pager</T>
+          <T size={26} weight="700" color={t.white}>Welcome to Monitor</T>
           <T size={15} color="rgba(255,255,255,0.65)" style={{ textAlign: "center", lineHeight: 21 }}>
             Your agents, pushes and location, on your phone. First, connect to your comms broker.
           </T>

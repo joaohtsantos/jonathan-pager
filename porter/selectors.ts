@@ -33,8 +33,8 @@ export interface AgentNode {
 /** A "done" agent quiet for longer than this is inactive (same threshold as the Mac Agent Monitor). */
 export const INACTIVE_AFTER_MS = 5 * 60_000;
 
-/** Subagents are only shown while live; finished/ended ones are hidden everywhere. */
-export const subagentVisible = (a: Agent) => a.status === "running" || a.status === "away" || a.status === "needs_you";
+/** Subagents are only shown while live or errored (they need attention); finished/ended ones are hidden everywhere. */
+export const subagentVisible = (a: Agent) => a.status === "running" || a.status === "away" || a.status === "needs_you" || a.status === "error";
 
 /** A kept agent's heartbeat this fresh means its brain is up (porter pings every 60s). */
 export const HEARTBEAT_FRESH_MS = 3 * 60_000;

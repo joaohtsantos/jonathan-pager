@@ -29,6 +29,21 @@ describe("selectors", () => {
     // finished / ended subagents are dropped; the parent's list just shrinks
     expect(tree.find((n) => n.agent.id === "a")!.children).toEqual([]);
   });
+  it("shows errored subagents under their parent and floats the parent", () => {
+    const mm: MachineState = {
+      machineId: "m_3", name: "mac", trusts: {},
+      agents: {
+        p: { id: "p", status: "done", status_since: iso(1000) },
+        q: { id: "q", status: "running", status_since: iso(1000) },
+        x: { id: "x", status: "error", parent: "p", error: { kind: "overloaded" } },
+        y: { id: "y", status: "done", parent: "q" },
+      },
+    };
+    const tree = agentTree(mm);
+    expect(tree.map((n) => n.agent.id)).toEqual(["p", "q"]);
+    expect(tree[0].children.map((c) => c.id)).toEqual(["x"]);
+    expect(tree[1].children).toEqual([]);
+  });
   it("splits done into idle (< threshold) and inactive", () => {
     expect(displayStatus(m.agents.j, now)).toBe("idle");
     expect(displayStatus({ id: "x", status: "done", last_active_at: iso(INACTIVE_AFTER_MS + 1) }, now)).toBe("inactive");

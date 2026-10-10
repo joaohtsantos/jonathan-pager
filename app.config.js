@@ -42,11 +42,11 @@ export default {
         "expo-location",
         {
           locationAlwaysAndWhenInUsePermission:
-            "Pager precisa da sua localização em background pra detectar quando você entra/sai de zonas (Casa, Segura, etc).",
+            "Monitor precisa da sua localização em background pra detectar quando você entra/sai de zonas (Casa, Segura, etc).",
           locationAlwaysPermission:
-            "Pager precisa da sua localização em background pra detectar quando você entra/sai de zonas.",
+            "Monitor precisa da sua localização em background pra detectar quando você entra/sai de zonas.",
           locationWhenInUsePermission:
-            "Pager mostra sua localização atual e te deixa cadastrar zonas usando a posição atual.",
+            "Monitor mostra sua localização atual e te deixa cadastrar zonas usando a posição atual.",
           isAndroidBackgroundLocationEnabled: true,
           isAndroidForegroundServiceEnabled: true,
         },

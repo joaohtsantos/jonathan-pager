@@ -65,9 +65,9 @@ export function useZoneEditor(onChanged?: () => void) {
       />
       <ConfirmModal
         visible={pendingDelete !== null}
-        title="DELETE ZONE"
+        title="Delete zone"
         body={`Remove "${pendingDelete?.name ?? ""}"? Geofence will stop firing for this location.`}
-        confirmLabel="DELETE"
+        confirmLabel="Delete"
         danger
         onCancel={() => setPendingDelete(null)}
         onConfirm={async () => {

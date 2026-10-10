@@ -231,7 +231,7 @@ export default function InboxScreen() {
         {pagerError && showPager ? <T size={11} color={t.faint} style={{ marginHorizontal: 20 }}>pager-api: {pagerError}</T> : null}
       </ScrollView>
       <MenuSheet visible={menu} title="Show" options={menuOptions} onClose={() => setMenu(false)} />
-      <ConfirmModal visible={confirm} title="MARK ALL READ" body={`Mark ${unreadPorter + unreadPager} item(s) as read?`} confirmLabel="MARK ALL" onConfirm={markAll} onCancel={() => setConfirm(false)} />
+      <ConfirmModal visible={confirm} title="Mark all read" body={`Mark ${unreadPorter + unreadPager} item(s) as read?`} confirmLabel="Mark all" onConfirm={markAll} onCancel={() => setConfirm(false)} />
     </Screen>
   );
 }

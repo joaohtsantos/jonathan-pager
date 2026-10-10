@@ -1,5 +1,5 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, fonts, spacing } from "../theme";
+import { t } from "../theme";
 
 interface ConfirmModalProps {
   visible: boolean;
@@ -12,56 +12,24 @@ interface ConfirmModalProps {
   danger?: boolean;
 }
 
-export default function ConfirmModal({
-  visible,
-  title,
-  body,
-  confirmLabel = "CONFIRM",
-  cancelLabel = "CANCEL",
-  onConfirm,
-  onCancel,
-  danger = false,
-}: ConfirmModalProps) {
+/** Centered confirm dialog (alert style). */
+export default function ConfirmModal({ visible, title, body, confirmLabel = "Confirm", cancelLabel = "Cancel", onConfirm, onCancel, danger = false }: ConfirmModalProps) {
   return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onCancel}
-      statusBarTranslucent
-    >
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable style={styles.card} onPress={() => {}}>
-          <View style={styles.cardLeftBar} />
           <View style={styles.inner}>
             <Text style={styles.title}>{title}</Text>
-            <View style={styles.divider} />
             <Text style={styles.body}>{body}</Text>
-            <View style={styles.buttons}>
-              <Pressable
-                onPress={onCancel}
-                style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
-              >
-                <Text style={styles.cancelText}>[ {cancelLabel} ]</Text>
-              </Pressable>
-              <Pressable
-                onPress={onConfirm}
-                style={({ pressed }) => [
-                  styles.btn,
-                  styles.confirmBtn,
-                  pressed && styles.btnPressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.confirmText,
-                    danger ? { color: colors.urgent } : null,
-                  ]}
-                >
-                  [ {confirmLabel} ]
-                </Text>
-              </Pressable>
-            </View>
+          </View>
+          <View style={styles.buttons}>
+            <Pressable onPress={onCancel} style={({ pressed }) => [styles.btn, pressed && styles.pressed]}>
+              <Text style={styles.cancelText}>{cancelLabel}</Text>
+            </Pressable>
+            <View style={styles.sep} />
+            <Pressable onPress={onConfirm} style={({ pressed }) => [styles.btn, pressed && styles.pressed]}>
+              <Text style={[styles.confirmText, danger && { color: t.danger }]}>{confirmLabel}</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -70,78 +38,15 @@ export default function ConfirmModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  card: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderBright,
-    minWidth: 280,
-    maxWidth: 400,
-  },
-  cardLeftBar: {
-    width: 3,
-    backgroundColor: colors.accent,
-  },
-  inner: {
-    flex: 1,
-    padding: spacing.lg,
-  },
-  title: {
-    color: colors.text,
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 3,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
-  },
-  body: {
-    color: colors.textDim,
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: spacing.lg,
-  },
-  buttons: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  btn: {
-    flex: 1,
-    paddingVertical: spacing.sm + 2,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.borderBright,
-    backgroundColor: colors.bg,
-  },
-  btnPressed: {
-    opacity: 0.6,
-  },
-  confirmBtn: {
-    borderColor: colors.accent,
-  },
-  cancelText: {
-    color: colors.textDim,
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
-  confirmText: {
-    color: colors.accent,
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
+  backdrop: { flex: 1, backgroundColor: t.backdrop, alignItems: "center", justifyContent: "center", padding: 40 },
+  card: { width: "100%", maxWidth: 320, backgroundColor: t.sheet, borderRadius: 14, overflow: "hidden" },
+  inner: { padding: 18, gap: 6, alignItems: "center" },
+  title: { color: t.white, fontSize: 17, fontWeight: "700", textAlign: "center" },
+  body: { color: t.dim, fontSize: 14, lineHeight: 19, textAlign: "center" },
+  buttons: { flexDirection: "row", borderTopWidth: 1, borderTopColor: t.divider },
+  btn: { flex: 1, minHeight: 46, alignItems: "center", justifyContent: "center" },
+  pressed: { backgroundColor: t.fill },
+  sep: { width: 1, backgroundColor: t.divider },
+  cancelText: { color: t.accent, fontSize: 16 },
+  confirmText: { color: t.accent, fontSize: 16, fontWeight: "700" },
 });

@@ -81,7 +81,7 @@ function resolutionNote(r: Resolution, machineName: string): { tone: "green" | "
 export default function AgentDetailScreen() {
   const { params } = useRoute<RouteProp<{ AgentDetail: AgentDetailParams }, "AgentDetail">>();
   const nav = useNavigation<Nav>();
-  const { actions, presence } = usePorter();
+  const { actions, presence, rt } = usePorter();
   const state = usePorterState();
   const now = useTick(1000);
   const toast = useToast();
@@ -109,7 +109,7 @@ export default function AgentDetailScreen() {
   const approver = machine.subscribed?.approver === true;
   const d = liveDurations(agent, now);
   const question = agent.status === "needs_you" ? questionForAgent(state.inbox, machine.machineId, machine.name, agent.id, now) : undefined;
-  const resolution = agent.status === "running" ? lastResolution(state.inbox, machine.machineId, machine.name, agent) : undefined;
+  const resolution = agent.status === "running" ? lastResolution(state.inbox, machine.machineId, machine.name, agent, rt?.node.machineId) : undefined;
   const recentResolution = resolution && now - resolution.at < RECENT_MS && resolution.at >= Date.parse(agent.status_since ?? "") - 5000 ? resolution : undefined;
   const recap = recapLines(agent);
 

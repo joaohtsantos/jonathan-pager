@@ -122,11 +122,9 @@ export function channelFor(item: InboxItem): ChannelKey {
 async function allowed(store: PorterStore, ch: ChannelKey, machine: string, agent: string | undefined, question: boolean) {
   if ((await getChannelsOff())[ch]) return false;
   // Muted senders never notify — questions from muted senders still do.
-  if (store.isSilenced(machine, agent)) {
-    const p = store.getSnapshot().prefs;
-    const blocked = p.blocked[`m:${machine}`] || (agent && p.blocked[`a:${machine}/${agent}`]);
-    if (blocked || !question) return false;
-  }
+  const pref = store.senderPref(machine, agent);
+  if (pref === "block") return false;
+  if (pref === "mute" && !question) return false;
   return true;
 }
 

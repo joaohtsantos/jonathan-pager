@@ -46,12 +46,12 @@ export function mockSnapshot(now = Date.now()): PorterSnapshot {
         agent({ id: "sub-gp", parent: "s-pager-ui", agent_type: "general-purpose", status: "done", summary: "Summarised the porter contract", started_at: ago(5 * M), status_since: ago(3 * M), running_ms: 2 * M + 10 * S }),
         agent({
           id: "s-comms-release", title: "comms-release", project: "~/fun/comms", status: "running", summary: "Installing the notifications package.",
-          last_decision: { choice: "Allow", via: "phone", at: ago(4 * S), text: "npm install expo-notifications" },
+          last_decision: { choice: "Allow", answered_by: "phone", at: ago(4 * S), text: "npm install expo-notifications" },
           started_at: ago(70 * M), status_since: ago(4 * S), running_ms: 41 * M, waiting_ms: 15 * M,
         }),
         agent({
           id: "s-notes-sync", title: "notes-sync", project: "~/notes", status: "running", summary: "Rebasing the vault onto the Pi copy.",
-          last_decision: { choice: "Allow", via: "terminal", at: ago(80 * S), text: "git pull --rebase" },
+          last_decision: { choice: "Allow", answered_by: "terminal", at: ago(80 * S), text: "git pull --rebase" },
           started_at: ago(60 * M), status_since: ago(80 * S), running_ms: 42 * M, waiting_ms: 15 * M,
         }),
         agent({

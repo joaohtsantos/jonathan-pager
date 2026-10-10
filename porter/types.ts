@@ -28,18 +28,22 @@ export interface Agent {
   end_reason?: "closed" | "stale" | string;
   // ---- Proposed, not in contract v1 yet (pending João's approval). Optional;
   // the UI renders without them.
-  /** "So far": short bullet recap of the session. */
+  /** "So far": multi-line recap; absent when the machine has recap off. */
   recap?: string[] | string;
   /** How the last question/permission for this agent was resolved. */
   last_decision?: Decision;
 }
 
-/** Proposed (not in v1): resolution of the agent's last ask. */
+/** Resolution of the agent's last ask (porter extra, optional). */
 export interface Decision {
   choice?: string;
-  via: "phone" | "terminal" | "timeout" | string;
+  answered_by?: "phone" | "terminal" | "timeout" | "approver" | string;
+  /** Which approver answered (phone or another approver machine). */
+  approver?: { id?: string; alias?: string };
   at?: string;
-  /** What was asked (e.g. the command), when known. */
+  /** Older mock / draft shape. */
+  via?: string;
+  /** What was asked, when known (not sent by porter; filled from the inbox). */
   text?: string;
 }
 

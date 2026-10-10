@@ -41,6 +41,20 @@ export interface Prefs {
   /** sender key → true. Muted: kept but silent. Blocked: dropped. */
   muted: Record<string, true>;
   blocked: Record<string, true>;
+  /** Explicit "Allowed" on an agent: overrides a muted / blocked machine. */
+  allowed?: Record<string, true>;
+}
+
+export type SenderPref = "allow" | "mute" | "block";
+
+/** The pref set on exactly this key (agent or machine), if any. */
+export function ownPref(p: Prefs, key: string): SenderPref | undefined {
+  return p.blocked[key] ? "block" : p.muted[key] ? "mute" : p.allowed?.[key] ? "allow" : undefined;
+}
+
+/** Effective pref: the agent's own setting wins over its machine's. */
+export function effectivePref(p: Prefs, machineId: string, agent?: string): SenderPref {
+  return (agent ? ownPref(p, agentKey(machineId, agent)) : undefined) ?? ownPref(p, machineKey(machineId)) ?? "allow";
 }
 
 export interface PorterSnapshot {
@@ -127,7 +141,7 @@ export class PorterStore {
       const next: PorterSnapshot = {
         machines: { ...this.snap.machines },
         inbox: [...this.snap.inbox],
-        prefs: { muted: { ...this.snap.prefs.muted }, blocked: { ...this.snap.prefs.blocked } },
+        prefs: { muted: { ...this.snap.prefs.muted }, blocked: { ...this.snap.prefs.blocked }, allowed: { ...(this.snap.prefs.allowed ?? {}) } },
       };
       const dirty = fn(next);
       this.snap = next;
@@ -195,7 +209,7 @@ export class PorterStore {
     await this.mutate((s) => {
       const probe = { notify, fromAgent };
       const agent = notifySenderAgent(probe);
-      if (s.prefs.blocked[machineKey(fromMachine)] || (agent && s.prefs.blocked[agentKey(fromMachine, agent)])) return [];
+      if (effectivePref(s.prefs, fromMachine, agent) === "block") return [];
       const i = s.inbox.findIndex((x) => x.id === notify.id && x.fromMachine === fromMachine);
       if (i >= 0) {
         // Same notify via the other path: the comms copy carries the reply address.
@@ -235,10 +249,31 @@ export class PorterStore {
     });
   }
 
+  /**
+   * Sets one sender key to a state. `undefined` clears it (an agent then
+   * follows its machine). "allow" on an agent is stored explicitly so it can
+   * override a muted / blocked machine.
+   */
+  setSenderPref(key: string, v: SenderPref | undefined): Promise<void> {
+    return this.mutate((s) => {
+      const p = s.prefs;
+      p.allowed ??= {};
+      delete p.muted[key];
+      delete p.blocked[key];
+      delete p.allowed[key];
+      if (v === "mute") p.muted[key] = true;
+      else if (v === "block") p.blocked[key] = true;
+      else if (v === "allow" && key.startsWith("a:")) p.allowed[key] = true;
+      return ["prefs"];
+    });
+  }
+
+  senderPref(machineId: string, agent?: string): SenderPref {
+    return effectivePref(this.snap.prefs, machineId, agent);
+  }
+
   isSilenced(machineId: string, agent?: string): boolean {
-    const p = this.snap.prefs;
-    const keys = [machineKey(machineId), ...(agent ? [agentKey(machineId, agent)] : [])];
-    return keys.some((k) => p.muted[k] || p.blocked[k]);
+    return this.senderPref(machineId, agent) !== "allow";
   }
 
   /** Dedupe for local notifications shown from either path. True if new. */

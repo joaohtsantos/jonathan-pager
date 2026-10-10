@@ -1,35 +1,53 @@
-// Add a machine (design: AppPair): give it this phone's identity, paste its
-// identity (alias + key fingerprint shown to verify), pick topics, pair.
+// Add a machine (design: PairFinal): three numbered steps, then "Pair <alias>".
+// Subscribes to agents, status and trusts; changeable on the machine page.
 import { useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useNavigation } from "@react-navigation/native";
 import { usePorter } from "../../porter/PorterProvider";
 import { parseBundle } from "../../comms/node";
-import { Check, Input, KVRow, List, PageTitle, Screen, SectionHeader, T, TextBtn, BackHeader } from "../../components/ui";
+import { BackHeader, BigButton, M, PageTitle, Screen, T } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { useToken } from "../../tokenContext";
-import { t } from "../../theme";
+import { keyFingerprint } from "../../lib/fingerprint";
+import { usePhoneAlias } from "../../lib/phoneAlias";
+import { fonts, t } from "../../theme";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** First 16 base64 chars of the key, in groups of 4 (matches `comms export` by eye). */
-export function fingerprint(pub: string) {
-  return pub.slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+/** Tolerates surrounding text / code fences around the JSON bundle. */
+export function extractJSON(s: string) {
+  const a = s.indexOf("{");
+  const b = s.lastIndexOf("}");
+  return a >= 0 && b > a ? s.slice(a, b + 1) : s;
 }
 
-export default function PairScreen() {
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <View style={{ flexDirection: "row", gap: 14 }}>
+      <View style={s.num}>
+        <T size={13} weight="700" color={t.accent}>{n}</T>
+      </View>
+      <View style={{ flex: 1, gap: 8 }}>
+        <T size={16} weight="600">{title}</T>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+export default function PairScreen({ onDone, embedded }: { onDone?: () => void; embedded?: boolean } = {}) {
   const nav = useNavigation();
   const { rt, refreshNode } = usePorter();
   const { token } = useToken();
   const toast = useToast();
+  const [alias] = usePhoneAlias();
   const node = rt?.node;
   const [text, setText] = useState("");
-  const [topics, setTopics] = useState({ agents: true, status: true, trusts: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const done = onDone ?? (() => nav.goBack());
 
-  const identity = node ? JSON.stringify(node.identityBundle("phone")) : "…";
   const parsed = useMemo(() => {
     if (!text.trim()) return null;
     try {
@@ -41,7 +59,8 @@ export default function PairScreen() {
   const ok = parsed && !("error" in parsed) ? parsed : null;
 
   const copy = async () => {
-    await Clipboard.setStringAsync(identity);
+    if (!node) return;
+    await Clipboard.setStringAsync(JSON.stringify(node.identityBundle(alias)));
     if (Platform.OS !== "android") toast.show("Identity copied");
   };
 
@@ -52,11 +71,10 @@ export default function PairScreen() {
     try {
       const peer = await node.pair(extractJSON(text));
       refreshNode();
-      const want = (Object.keys(topics) as (keyof typeof topics)[]).filter((k) => topics[k]);
       // porter may not be visible until the machine pairs + grants us back.
-      await rt?.porter.subscribe(peer.machine_id, token, want).catch((e) => toast.show(`Paired; subscribe failed: ${errText(e)}`, 3000));
+      await rt?.porter.subscribe(peer.machine_id, token, ["agents", "status", "trusts"]).catch((e) => toast.show(`Paired; subscribe failed: ${errText(e)}`, 3000));
       toast.show(`Paired ${peer.alias}`);
-      nav.goBack();
+      done();
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -64,65 +82,67 @@ export default function PairScreen() {
     }
   };
 
+  const body = (
+    <ScrollView contentContainerStyle={{ flexGrow: 1, gap: 22, paddingHorizontal: 20, paddingBottom: 16 }} keyboardShouldPersistTaps="handled">
+      <Step n={1} title="Give the machine this phone">
+        <Pressable onPress={copy} disabled={!node} style={({ pressed }) => [s.copy, pressed && { opacity: 0.7 }]}>
+          <T size={15} weight="600" color={t.white}>Copy this phone's identity</T>
+        </Pressable>
+        <T size={13} color="rgba(255,255,255,0.6)">
+          Then on the machine: <M color={t.white}>{`comms pair --stdin --alias ${alias}`}</M> and <M color={t.white}>{`comms grant ${alias}`}</M>
+        </T>
+      </Step>
+      <Step n={2} title="Paste the machine's identity">
+        <T size={13} color="rgba(255,255,255,0.6)">
+          From <M color={t.white}>comms export</M> on that machine
+        </T>
+        <TextInput
+          accessibilityLabel="Machine identity"
+          value={text}
+          onChangeText={setText}
+          multiline
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder='{"machine_id":"m_…","public_key":"…","alias":"work-mac"}'
+          placeholderTextColor={t.faint}
+          style={s.area}
+          textAlignVertical="top"
+        />
+        {parsed && "error" in parsed ? <T size={12} color={t.danger}>{parsed.error}</T> : null}
+      </Step>
+      <Step n={3} title="Check it's the right machine">
+        <View style={s.check}>
+          <T mono size={17} weight="600" color={ok ? t.white : t.faint}>{ok ? ok.alias : "—"}</T>
+          <T mono size={18} color={ok ? t.white : t.faint} style={{ letterSpacing: 1.2 }}>{ok ? keyFingerprint(ok.public_key) : "paste the identity first"}</T>
+          <T size={12} color={t.dim}>
+            Must match the fingerprint <M>comms export</M> shows there
+          </T>
+        </View>
+      </Step>
+      <View style={{ flex: 1 }} />
+      {error ? <T size={12} color={t.danger} selectable>{error}</T> : null}
+      <T size={12} color={t.text3} style={{ textAlign: "center" }}>Subscribes to agents, status and trusts · change later in the machine's page</T>
+      <View style={{ flexDirection: "row" }}>
+        <BigButton label={busy ? "Pairing…" : ok ? `Pair ${ok.alias}` : "Pair"} disabled={!ok || busy || !node} onPress={pair} />
+      </View>
+    </ScrollView>
+  );
+
+  if (embedded) return body;
   return (
     <Screen>
       <BackHeader label="Machines" onBack={() => nav.goBack()} />
-      <PageTitle title="Add a machine" />
-      <ScrollView contentContainerStyle={{ gap: 22, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
-        <View>
-          <SectionHeader meta="paste on the machine">1 · Give it this phone</SectionHeader>
-          <List>
-            <KVRow label={<T mono size={12} color={t.faint} lines={1} style={{ flexShrink: 1 }}>{identity}</T>} right={<TextBtn label="Copy" onPress={copy} disabled={!node} />} />
-          </List>
-          <T size={12} color={t.faint} style={{ marginTop: 8, marginHorizontal: 20 }}>
-            On the machine: <T mono size={12} color={t.dim}>comms pair --stdin</T> then <T mono size={12} color={t.dim}>comms grant phone</T>
-          </T>
-        </View>
-
-        <View>
-          <SectionHeader meta="from comms export">2 · Paste the machine's identity</SectionHeader>
-          <List>
-            <View style={{ paddingVertical: 10, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: t.hairline }}>
-              <T size={11} color={t.faint}>Identity</T>
-              <Input mono multiline value={text} onChangeText={setText} placeholder='{"machine_id":"m_…","public_key":"…","alias":"work-mac"}' style={{ marginTop: 4, minHeight: 76, textAlignVertical: "top", borderRadius: 8 }} />
-            </View>
-            {ok ? (
-              <>
-                <KVRow label="Alias" value={ok.alias} mono />
-                <KVRow label="Key fingerprint" value={fingerprint(ok.public_key)} mono />
-              </>
-            ) : parsed && "error" in parsed ? (
-              <KVRow label={<T size={13} color={t.danger}>{parsed.error}</T>} />
-            ) : null}
-          </List>
-          <T size={12} color={t.faint} style={{ marginTop: 8, marginHorizontal: 20 }}>
-            Check the fingerprint matches <T mono size={12} color={t.dim}>comms export</T> on that machine.
-          </T>
-        </View>
-
-        <View>
-          <SectionHeader>3 · Subscribe to</SectionHeader>
-          <List>
-            <Check label="Agents" value={topics.agents} onChange={(v) => setTopics({ ...topics, agents: v })} />
-            <Check label="Status" value={topics.status} onChange={(v) => setTopics({ ...topics, status: v })} />
-            <Check label="Trusts" sub="only if this phone approves there" value={topics.trusts} onChange={(v) => setTopics({ ...topics, trusts: v })} />
-          </List>
-        </View>
-
-        {error ? <T size={12} color={t.danger} style={{ marginHorizontal: 20 }} selectable>{error}</T> : null}
-        <View style={{ paddingHorizontal: 18 }}>
-          <Pressable onPress={pair} disabled={!ok || busy || !node} style={({ pressed }) => [{ minHeight: 48, borderRadius: 10, backgroundColor: ok && node ? t.accent : "rgba(10,132,255,0.35)", alignItems: "center", justifyContent: "center" }, pressed && { opacity: 0.8 }]}>
-            <T size={16} weight="700" color={ok ? t.white : "rgba(255,255,255,0.5)"}>{busy ? "Pairing…" : ok ? `Pair ${ok.alias}` : "Pair"}</T>
-          </Pressable>
-        </View>
-      </ScrollView>
+      <View style={{ paddingTop: 2, paddingHorizontal: 20, paddingBottom: 18 }}>
+        <PageTitle title="Add a machine" />
+      </View>
+      {body}
     </Screen>
   );
 }
 
-/** Tolerates surrounding text / code fences around the JSON bundle. */
-function extractJSON(s: string) {
-  const a = s.indexOf("{");
-  const b = s.lastIndexOf("}");
-  return a >= 0 && b > a ? s.slice(a, b + 1) : s;
-}
+const s = StyleSheet.create({
+  num: { width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(10,132,255,0.2)", alignItems: "center", justifyContent: "center" },
+  copy: { minHeight: 44, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
+  area: { height: 72, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", borderRadius: 10, padding: 10, backgroundColor: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.75)", fontSize: 12, lineHeight: 17, fontFamily: fonts.mono },
+  check: { padding: 14, borderRadius: 10, backgroundColor: "#262629", gap: 6 },
+});

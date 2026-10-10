@@ -148,7 +148,6 @@ export default function InboxScreen() {
     { key: "all", label: "All senders", checked: !machineFilter && !agentFilter, onPress: () => { setMachineFilter(undefined); nav.setParams({ agent: undefined, machine: undefined }); } },
     ...machinesInInbox.map((m) => ({ key: m, label: nameOf(m), checked: machineFilter === m && !agentFilter, onPress: () => { setMachineFilter(m); nav.setParams({ agent: undefined }); } })),
     ...(pagerOn ? [{ key: PAGER, label: "Pager (legacy)", checked: machineFilter === PAGER, onPress: () => setMachineFilter(PAGER) }] : []),
-    { key: "senders", label: "Manage senders…", color: t.accent, onPress: () => nav.navigate("Senders") },
     ...(pagerOn ? [{ key: "log", label: "Pager log…", color: t.accent, onPress: () => nav.navigate("PushList") }] : []),
     ...(unreadPorter + unreadPager > 0 ? [{ key: "read", label: "Mark all read", color: t.accent, onPress: () => setConfirm(true) }] : []),
   ];
@@ -160,9 +159,14 @@ export default function InboxScreen() {
       <LargeHeader
         title="Inbox"
         right={
-          <Pressable onPress={() => setMenu(true)} hitSlop={6} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}>
-            <T size={13} color="rgba(255,255,255,0.75)">{filterLabel} ▾</T>
-          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Pressable onPress={() => setMenu(true)} hitSlop={6} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}>
+              <T size={13} color="rgba(255,255,255,0.75)">{filterLabel} ▾</T>
+            </Pressable>
+            <Pressable onPress={() => nav.navigate("Senders")} hitSlop={6} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}>
+              <T size={15} weight="600" color={t.accent}>Senders</T>
+            </Pressable>
+          </View>
         }
       />
       <ScrollView

@@ -6,7 +6,7 @@ import { useNavigation, useRoute, type RouteProp } from "@react-navigation/nativ
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { usePorter, usePorterState, useTick } from "../../porter/PorterProvider";
-import { agentKey, isQuestion, notifySenderAgent } from "../../porter/store";
+import { agentKey, effectivePref, isQuestion, notifySenderAgent } from "../../porter/store";
 import { dayLabel, formatHM, machineLiveness, notifyLook, resolutionText, senderParts } from "../../porter/selectors";
 import type { InboxStackParamList } from "../../navigation/types";
 import { BackHeader, BigButton, BottomBar, ButtonPair, Empty, Note, Screen, Segmented, T, TextBtn } from "../../components/ui";
@@ -53,7 +53,7 @@ export default function InboxItemScreen() {
   const live = machineLiveness(machine, presence, now);
   const senderKey = notifySenderAgent(item);
   const ak = senderKey ? agentKey(item.fromMachine, senderKey) : undefined;
-  const pref = ak ? (state.prefs.blocked[ak] ? "block" : state.prefs.muted[ak] ? "mute" : "allow") : "allow";
+  const pref = effectivePref(state.prefs, item.fromMachine, senderKey);
   const exp = n.expires_at ? Date.parse(n.expires_at) : 0;
   const shownDraft = draft ?? n.draft ?? "";
   const edited = draft !== null && draft !== (n.draft ?? "");
@@ -83,8 +83,7 @@ export default function InboxItemScreen() {
 
   const setPref = async (v: "allow" | "mute" | "block") => {
     if (!ak || !store) return;
-    await store.setPref("muted", ak, v === "mute");
-    await store.setPref("blocked", ak, v === "block");
+    await store.setSenderPref(ak, v);
   };
 
   const openLink = () => {

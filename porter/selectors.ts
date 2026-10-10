@@ -224,7 +224,7 @@ export interface Resolution {
  * How this agent's last ask was resolved: the agent's `last_decision` (proposed
  * field) when present, else the newest answered / cancelled notify for it.
  */
-export function lastResolution(inbox: InboxItem[], machineId: string, machineName: string | undefined, a: Agent): Resolution | undefined {
+export function lastResolution(inbox: InboxItem[], machineId: string, machineName: string | undefined, a: Agent, selfId?: string): Resolution | undefined {
   const local = inbox
     .filter((i) => (i.answer?.state === "sent" || i.cancelled) && notifyIsFor(i, machineId, machineName, a.id))
     .sort((x, y) => (y.answer?.at ?? y.cancelled?.at ?? 0) - (x.answer?.at ?? x.cancelled?.at ?? 0))[0];
@@ -234,9 +234,21 @@ export function lastResolution(inbox: InboxItem[], machineId: string, machineNam
       : { via: local.cancelled!.resolution, at: local.cancelled!.at, text: local.notify.body || local.notify.title }
     : undefined;
   const d = a.last_decision;
-  const fromAgent: Resolution | undefined = d ? { choice: d.choice, via: d.via, at: ts(d.at), text: d.text ?? fromLocal?.text } : undefined;
+  const via = d ? decisionVia(d, selfId) : undefined;
+  const fromAgent: Resolution | undefined = d ? { choice: d.choice, via: via!, at: ts(d.at), text: d.text ?? fromLocal?.text } : undefined;
   if (fromAgent && (!fromLocal || fromAgent.at >= fromLocal.at)) return fromAgent;
   return fromLocal;
+}
+
+/** phone (this phone answered) | timeout | terminal ("Answered on <machine>"). */
+export function decisionVia(d: NonNullable<Agent["last_decision"]>, selfId?: string): "phone" | "timeout" | "terminal" {
+  const by = d.answered_by ?? d.via;
+  if (by === "timeout") return "timeout";
+  if (by === "phone" || by === "approver") {
+    if (d.approver?.id && selfId) return d.approver.id.split(":")[0] === selfId ? "phone" : "terminal";
+    return by === "phone" ? "phone" : "terminal";
+  }
+  return "terminal";
 }
 
 /** "Bash: npm install x" → { verb: "Wants to run", text: "npm install x" }. */

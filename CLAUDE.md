@@ -15,17 +15,19 @@ Expo / React Native mobile app — the frontend of the Pager pair. Receives push
 - `npm run android` / `npm run ios` / `npm run web`
 - Builds: configured via `eas.json` (Expo Application Services)
 
-## Screens (4 tabs: Agents · Inbox · Location · Machines)
-- `screens/agents/` — porter agents by machine (needs_you first, subagents nested), detail (special toggle for approvers), Graveyard
-- `screens/inbox/` — one timeline: porter notifies + pager-api pushes; questions + pending requests pinned; sender detail with mute/block
-- `screens/LocationScreen.tsx` — unchanged
-- `screens/machines/` — paired machines, pairing paste / copy identity, broker URL + service key, trusts; then `SettingsSections`
-- Legacy, reachable from Inbox: `PushListScreen` (PAGER LOG), `PushDetailScreen`, `RequestsScreen`
-- Styling primitives: `components/ui.tsx` (restyle there)
+## Screens (4 tabs: Agents · Inbox · Location · Machines; designs in `scratchpad/design/project/*.dc.html`)
+- `screens/agents/` — machine sections (reorder + float, saved locally), D6 agent detail states, Graveyard
+- `screens/inbox/` — InboxK3 list (porter notifies + legacy pager-api pushes), opened message / question (draft reply), Senders
+- `screens/location/` — Day/Week/Month/Custom periods, by-place totals, timeline corrections, Zones (zone colors client-side)
+- `screens/machines/` — list, machine detail, Add a machine, Settings, Settings › Notifications
+- `screens/onboarding/` — first launch (only when no broker configured)
+- Legacy, reachable from Inbox: `PushListScreen` (Inbox menu › Pager log), `PushDetailScreen`, `RequestsScreen`
+- Styling: tokens in `theme.ts` (`t`), primitives in `components/ui.tsx`
+- Dev mock data: Machines › Settings › Developer (dev builds only), `porter/mock.ts`
 
 ## Comms / porter (Agent Monitor Mobile)
 - `comms/` — TypeScript comms node (port of `~/fun/comms`): identity in expo-secure-store, broker auth, presence for agent `app`, grants, NaCl envelopes, NDJSON stream (XHR), receipts/acks. Tests: `npm test` (Go-produced vectors in `comms/__tests__/vectors`; live interop test needs a scratch Go broker, see `interop.test.ts`).
-- `porter/` — porter contract v1 (`~/fun/comms` `docs/PORTER.md`): client, persisted store, encrypted push task (`porter/pushTask.ts`, imported in `index.ts`), local notification channels `porter-high` / `porter-default`.
+- `porter/` — porter contract v1 (`~/fun/comms` `docs/PORTER.md`): client, persisted store, encrypted push task (`porter/pushTask.ts`, imported in `index.ts`), local notification channels per kind (`pager-approvals|questions|special|alerts|messages`), approval action buttons answered from the background task (`porter/notify.ts`).
 - Design notes: `~/notes/projects/pager-agent-monitor.md`.
 
 ## Wiring

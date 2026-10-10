@@ -28,7 +28,7 @@ Expo / React Native mobile app — the frontend of the Pager pair. Receives push
 ## Comms / porter (Agent Monitor Mobile)
 - `comms/` — TypeScript comms node (port of `~/fun/comms`): identity in expo-secure-store, broker auth, presence for agent `app`, grants, NaCl envelopes, NDJSON stream (XHR), receipts/acks. Tests: `npm test` (Go-produced vectors in `comms/__tests__/vectors`; live interop test needs a scratch Go broker, see `interop.test.ts`).
 - `porter/` — porter contract v1 (`~/fun/comms` `docs/PORTER.md`): client, persisted store, encrypted push task (`porter/pushTask.ts`, imported in `index.ts`), local notification channels per kind (`pager-approvals|questions|special|alerts|messages`), approval action buttons answered from the background task (`porter/notify.ts`).
-- Design notes: `~/notes/projects/pager-agent-monitor.md`.
+- Status, ledger and design notes: `~/notes/kb/projects/pager-app/` (incl. `pager-agent-monitor.md`).
 
 ## Wiring
 - **Backend pair:** `~/pager-api/` — `constants.ts` hardcodes:

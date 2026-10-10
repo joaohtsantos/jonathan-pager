@@ -32,11 +32,15 @@ export class PorterClient {
   }
 
   /** porter.subscribe to one machine. Omitting the token clears it there. */
-  async subscribe(machineId: string, pushToken?: string | null): Promise<void> {
+  async subscribe(machineId: string, pushToken?: string | null, topics?: string[]): Promise<void> {
+    const known = this.store.getSnapshot().machines[machineId];
+    const want = topics ?? known?.wantTopics;
+    if (known?.pushOff) pushToken = null;
+    if (topics) await this.store.updateMachine(machineId, (m) => void (m.wantTopics = topics));
     const body = {
       type: "porter.subscribe",
       v: 1,
-      topics: [...TOPICS],
+      topics: want?.length ? want : [...TOPICS],
       ...(pushToken ? { push: { provider: "expo", token: pushToken } } : {}),
     };
     try {
@@ -53,6 +57,12 @@ export class PorterClient {
     await Promise.all(this.node.peers().map((p) => this.subscribe(p.machine_id, pushToken).catch(() => undefined)));
   }
 
+  /** Push notifications on/off for one machine: re-subscribe with or without the token. */
+  async setPush(machineId: string, on: boolean, pushToken?: string | null): Promise<void> {
+    await this.store.updateMachine(machineId, (m) => void (m.pushOff = !on));
+    await this.subscribe(machineId, pushToken);
+  }
+
   async unsubscribe(machineId: string): Promise<void> {
     await this.node.send(machineId, PORTER_ALIAS, JSON.stringify({ type: "porter.unsubscribe", v: 1 }));
   }
@@ -61,22 +71,31 @@ export class PorterClient {
     await this.node.send(machineId, PORTER_ALIAS, JSON.stringify({ type: "porter.set", v: 1, agent: agentId, special }));
   }
 
+  /** Stop being an approver on that machine (one-way; re-enabling happens on the machine). */
+  async resign(machineId: string): Promise<void> {
+    await this.node.send(machineId, PORTER_ALIAS, JSON.stringify({ type: "porter.resign", v: 1 }));
+  }
+
   async revokeTrust(machineId: string, trustId: string): Promise<void> {
     await this.node.send(machineId, PORTER_ALIAS, JSON.stringify({ type: "porter.revoke", v: 1, trust: trustId }));
   }
 
-  /** porter.answer to the exact `from` of the notify. */
-  async answer(item: InboxItem, choice: string): Promise<void> {
+  /**
+   * porter.answer to the exact `from` of the notify. `text` (an edited draft
+   * reply) is a proposed extension, not in contract v1; porter ignores it until
+   * then.
+   */
+  async answer(item: InboxItem, choice: string, text?: string): Promise<void> {
     await this.store.updateInbox(item.id, item.fromMachine, (i) => ({
       ...i,
       read: true,
-      answer: { choice, at: Date.now(), state: "sending" },
+      answer: { choice, at: Date.now(), state: "sending", ...(text !== undefined ? { text } : {}) },
     }));
     try {
       // Answers go to the exact carrier (`<machine>:porter`), which forwards
       // to the asking agent. Seen only via push: address porter by alias.
       const to = item.fromAgent ?? PORTER_ALIAS;
-      await this.node.send(item.fromMachine, to, JSON.stringify({ type: "porter.answer", v: 1, id: item.id, choice }));
+      await this.node.send(item.fromMachine, to, JSON.stringify({ type: "porter.answer", v: 1, id: item.id, choice, ...(text !== undefined ? { text } : {}) }));
       await this.store.updateInbox(item.id, item.fromMachine, (i) => ({ ...i, answer: { ...i.answer!, state: "sent" } }));
     } catch (e) {
       await this.store.updateInbox(item.id, item.fromMachine, (i) => ({

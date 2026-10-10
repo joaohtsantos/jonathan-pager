@@ -18,6 +18,10 @@ export interface MachineState {
   statusAt?: number;
   trusts: Record<string, Trust>;
   lastMessageAt?: number;
+  /** Topics this phone asks for (chosen when pairing); default: all. */
+  wantTopics?: string[];
+  /** Phone turned pushes off for this machine (subscribe without a token). */
+  pushOff?: boolean;
 }
 
 export interface InboxItem {
@@ -29,7 +33,7 @@ export interface InboxItem {
   receivedAt: number;
   via: "comms" | "push";
   read: boolean;
-  answer?: { choice: string; at: number; state: "sending" | "sent" | "failed"; error?: string };
+  answer?: { choice: string; at: number; state: "sending" | "sent" | "failed"; error?: string; text?: string };
   cancelled?: { resolution: string; at: number };
 }
 
@@ -99,6 +103,16 @@ export class PorterStore {
   }
 
   getSnapshot = (): PorterSnapshot => this.snap;
+
+  /** Replaces everything (dev mock mode seeds an in-memory store with it). */
+  replaceAll(snap: PorterSnapshot): Promise<void> {
+    return this.mutate((s) => {
+      s.machines = snap.machines;
+      s.inbox = snap.inbox;
+      s.prefs = snap.prefs;
+      return ["machines", "inbox", "prefs"];
+    });
+  }
   subscribe = (l: () => void): (() => void) => {
     this.listeners.add(l);
     return () => this.listeners.delete(l);

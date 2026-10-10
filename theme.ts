@@ -1,22 +1,60 @@
 import { Platform } from "react-native";
 
-export const colors = {
-  bg: "#0A0A0A",
-  surface: "#141414",
-  surfaceAlt: "#1A1A1A",
-  divider: "#222",
-  border: "#2A2A2A",
-  borderBright: "#3A3A3A",
-  text: "#E5E5E5",
-  textDim: "#888",
-  textFaint: "#555",
-  accent: "#C2410C",  // deep orange — top bar, mark-all action, primary highlights
-  urgent: "#C2410C",  // deep orange — the one category that gets the loud highlight
-  alert: "#6B6B6B",   // mid gray — readable but quiet
-  info: "#3A3A3A",    // darker gray — barely there
-  ok: "#C2410C",      // deep orange (rare use; status text mostly carries it now)
-  reject: "#6B6B6B",  // mid gray — defer if Requests reject needs more distinction
+// Design tokens (Pager UI, 2026-10). System font everywhere; monospace for
+// agent / machine names, times and commands. Inbox sits on a slightly darker bg.
+export const t = {
+  bg: "#1C1C1E",
+  bgInbox: "#161618",
+  raised: "#222225", // Inbox "waiting on you" cards
+  sheet: "#2C2C2E", // bottom sheets, menus
+  tabBar: "#232325",
+  backdrop: "rgba(0,0,0,0.6)",
 
+  text: "rgba(255,255,255,0.92)",
+  text2: "rgba(255,255,255,0.72)",
+  text3: "rgba(255,255,255,0.5)",
+  dim: "rgba(255,255,255,0.55)",
+  faint: "rgba(255,255,255,0.35)",
+  white: "#FFFFFF",
+
+  divider: "rgba(255,255,255,0.08)",
+  hairline: "rgba(255,255,255,0.06)",
+  fill: "rgba(255,255,255,0.06)",
+  fill2: "rgba(255,255,255,0.12)",
+
+  running: "#32D74B",
+  needs: "#FF9F0A",
+  done: "#8E8E93",
+  accent: "#0A84FF",
+  danger: "#FF6961",
+
+  // Inbox kind icons
+  kindPermission: "#0A84FF",
+  kindTrust: "#BF5AF2",
+  kindQuestion: "#64D2FF",
+  kindMessage: "#E5E5EA",
+  kindCamera: "#30D158",
+  kindHigh: "#FF453A",
+  kindAnswered: "#8E8E93",
+};
+
+/** Legacy keys still read by the pre-redesign screens (Push log, Requests, Settings). */
+export const colors = {
+  bg: t.bg,
+  surface: t.tabBar,
+  surfaceAlt: t.sheet,
+  divider: t.hairline,
+  border: t.divider,
+  borderBright: "rgba(255,255,255,0.16)",
+  text: t.text,
+  textDim: t.dim,
+  textFaint: t.faint,
+  accent: t.accent,
+  urgent: t.needs,
+  alert: "#8E8E93",
+  info: "#48484A",
+  ok: t.running,
+  reject: "#8E8E93",
 };
 
 export const fonts = {

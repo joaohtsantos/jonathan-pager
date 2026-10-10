@@ -26,6 +26,21 @@ export interface Agent {
   waiting_ms?: number;
   ended_at?: string;
   end_reason?: "closed" | "stale" | string;
+  // ---- Proposed, not in contract v1 yet (pending João's approval). Optional;
+  // the UI renders without them.
+  /** "So far": short bullet recap of the session. */
+  recap?: string[] | string;
+  /** How the last question/permission for this agent was resolved. */
+  last_decision?: Decision;
+}
+
+/** Proposed (not in v1): resolution of the agent's last ask. */
+export interface Decision {
+  choice?: string;
+  via: "phone" | "terminal" | "timeout" | string;
+  at?: string;
+  /** What was asked (e.g. the command), when known. */
+  text?: string;
 }
 
 export interface MachineStatus {
@@ -66,6 +81,8 @@ export interface Notify {
   context?: { machine?: string; agent?: string; harness?: string; session?: string; title?: string; project?: string };
   trust?: { receiver?: string; sender?: string };
   sent_at?: string;
+  /** Proposed (not in v1): suggested reply the phone may edit before answering. */
+  draft?: string;
 }
 
 export interface Subscribed {
